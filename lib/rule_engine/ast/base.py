@@ -142,6 +142,15 @@ def _resolve_type(definition: _DataTypeDef, context: 'Context') -> _DataTypeDef:
                 definition.python_type,
                 value_type=new_value_type
         )
+    if DataType.is_type(definition, DataType.INTERVAL):
+        new_value_type = _resolve_type(definition.value_type, context)
+        if new_value_type is definition.value_type:
+            return definition
+        return definition.__class__(
+                definition.name,
+                definition.python_type,
+                value_type=new_value_type
+        )
     if DataType.is_type(definition, DataType.MAPPING):
         new_key_type = _resolve_type(definition.key_type, context)
         new_value_type = _resolve_type(definition.value_type, context)
@@ -292,6 +301,10 @@ class LiteralExpressionBase(ExpressionBase):
         if datatype.is_compound:
             if DataType.is_type(datatype, DataType.ARRAY) or DataType.is_type(datatype, DataType.SET):
                 value = datatype.python_type(cls.from_value(context, v) for v in value)
+            elif DataType.is_type(datatype, DataType.INTERVAL):
+                # intervals are native, immutable values (potentially spanning multiple atoms) and are not rebuilt
+                # from literal expressions
+                pass
             elif DataType.is_type(datatype, DataType.MAPPING):
                 value = tuple((cls.from_value(context, k), cls.from_value(context, v)) for k, v in value.items())
         else:

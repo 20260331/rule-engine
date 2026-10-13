@@ -46,8 +46,10 @@ __all__ = (
         'AddExpressionTests',
         'AddDatetimeExpressionTests',
         'SubtractExpressionTests',
+        'SubtractIntervalExpressionTests',
         'BitwiseExpressionTests',
         'BitwiseExpressionSetTests',
+        'BitwiseExpressionIntervalTests',
         'BitwiseShiftExpressionTests',
         'LogicExpressionTests',
         # comparison expressions
@@ -337,6 +339,64 @@ class BitwiseExpressionSetTests(BitwiseExpressionTests):
         self.assertExpressionTests('bwand', equals_value=set([3]))
         self.assertExpressionTests('bwor', equals_value=set([1, 2, 3, 4, 5]))
         self.assertExpressionTests('bwxor', equals_value=set([1, 2, 4, 5]))
+
+class BitwiseExpressionIntervalTests(BitwiseExpressionTests):
+    false_value = types.Interval(1, 1, left_closed=False)
+    left_value = ast.LiteralExpressionBase.from_value(context, types.Interval(0, 10, right_closed=True))
+    right_value = ast.LiteralExpressionBase.from_value(context, types.Interval(5, 15, right_closed=True))
+    def test_ast_expression_left_operator_right_bitwise(self):
+        self.assertExpressionTests(
+                'bwand',
+                equals_value=types.Interval(5, 10, left_closed=True, right_closed=True)
+        )
+        self.assertExpressionTests(
+                'bwor',
+                equals_value=types.Interval(0, 15, left_closed=True, right_closed=True)
+        )
+        self.assertExpressionTests(
+                'bwxor',
+                equals_value=types.Interval(0, 5, right_closed=False) | types.Interval(10, 15, left_closed=False, right_closed=True)
+        )
+
+    def test_ast_expression_left_operator_right_bitwise_type_errors(self):
+        for operation in ('bwand', 'bwor', 'bwxor'):
+            with self.assertRaises(errors.EvaluationError):
+                self.ExpressionClass(
+                        context,
+                        operation,
+                        ast.LiteralExpressionBase.from_value(context, types.Interval(0, 1)),
+                        ast.FloatExpression(context, 1.0)
+                )
+            with self.assertRaises(errors.EvaluationError):
+                self.ExpressionClass(
+                        context,
+                        operation,
+                        ast.LiteralExpressionBase.from_value(context, types.Interval(0, 1)),
+                        ast.LiteralExpressionBase.from_value(
+                                context,
+                                types.Interval(datetime.timedelta(days=1), datetime.timedelta(days=2))
+                        )
+                )
+
+class SubtractIntervalExpressionTests(BinaryExpressionTestsBase):
+    ExpressionClass = ast.SubtractExpression
+    false_value = types.Interval(1, 1, left_closed=False)
+    left_value = ast.LiteralExpressionBase.from_value(context, types.Interval(1, 10, right_closed=False))
+    right_value = ast.LiteralExpressionBase.from_value(context, types.Interval(3, 5, right_closed=True))
+    def test_ast_expression_interval_difference(self):
+        self.assertExpressionTests(
+                'sub',
+                equals_value=types.Interval(1, 3, right_closed=False) | types.Interval(5, 10, left_closed=False, right_closed=False)
+        )
+
+    def test_ast_expression_interval_difference_type_errors(self):
+        with self.assertRaises(errors.EvaluationError):
+            self.ExpressionClass(
+                    context,
+                    'sub',
+                    ast.LiteralExpressionBase.from_value(context, types.Interval(0, 1)),
+                    ast.FloatExpression(context, 1.0)
+            )
 
 class BitwiseShiftExpressionTests(BitwiseExpressionTests):
     ExpressionClass = ast.BitwiseShiftExpression

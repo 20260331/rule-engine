@@ -42,6 +42,7 @@ from .definitions import (
         _DATA_TYPE_UNDEFINED,
         _DataTypeDef,
         _FunctionDataTypeDef,
+        _IntervalDataTypeDef,
         _MappingDataTypeDef,
         _NullableDataTypeDef,
         _PYTHON_FUNCTION_TYPE,
@@ -50,6 +51,7 @@ from .definitions import (
         NoneType,
 )
 from ._object import _ObjectDataTypeDef
+from .interval import Interval
 
 def iterable_member_value_type(python_value: Any) -> _DataTypeDef:
     """
@@ -148,6 +150,7 @@ class DataType(metaclass=DataTypeMeta):
     DATETIME = _DataTypeDef('DATETIME', datetime.datetime)
     FLOAT = _DataTypeDef('FLOAT', decimal.Decimal)
     FUNCTION = _FunctionDataTypeDef('FUNCTION', _PYTHON_FUNCTION_TYPE)
+    INTERVAL = _IntervalDataTypeDef('INTERVAL', Interval)
     MAPPING = _MappingDataTypeDef('MAPPING', dict)
     NULL = _DataTypeDef('NULL', NoneType)
     NULLABLE = _NullableDataTypeDef('NULLABLE', object)
@@ -211,6 +214,8 @@ class DataType(metaclass=DataTypeMeta):
             return cls.DATETIME
         elif python_type is datetime.timedelta:
             return cls.TIMEDELTA
+        elif python_type is Interval:
+            return cls.INTERVAL
         elif python_type in (decimal.Decimal, float, int):
             return cls.FLOAT
         elif python_type is dict:
@@ -262,6 +267,17 @@ class DataType(metaclass=DataTypeMeta):
             return cls.NULL
         elif isinstance(python_value, (set,)):
             return cls.SET(value_type=iterable_member_value_type(python_value))
+        elif isinstance(python_value, Interval):
+            domain_name = python_value.domain_type_name
+            if domain_name == 'FLOAT':
+                domain = cls.FLOAT
+            elif domain_name == 'DATETIME':
+                domain = cls.DATETIME
+            elif domain_name == 'TIMEDELTA':
+                domain = cls.TIMEDELTA
+            else:
+                domain = _DATA_TYPE_UNDEFINED
+            return cls.INTERVAL(value_type=domain)
         elif isinstance(python_value, (str,)):
             return cls.STRING
         elif isinstance(python_value, collections.abc.Mapping):
@@ -333,6 +349,8 @@ class DataType(metaclass=DataTypeMeta):
                 return True
             elif DataType.is_type(dt1, DataType.SET) and DataType.is_type(dt2, DataType.SET):
                 return cls.is_compatible(dt1.value_type, dt2.value_type)
+            elif DataType.is_type(dt1, DataType.INTERVAL) and DataType.is_type(dt2, DataType.INTERVAL):
+                return cls.is_compatible(dt1.value_type, dt2.value_type)
             elif DataType.is_type(dt1, DataType.OBJECT) and DataType.is_type(dt2, DataType.OBJECT):
                 # bare DataType.OBJECT acts as a wildcard, mirroring how an untyped ARRAY (value_type UNDEFINED)
                 # matches any typed ARRAY via its value_type compatibility check
@@ -360,6 +378,9 @@ class DataType(metaclass=DataTypeMeta):
     @classmethod
     @overload
     def is_type(cls, dt: _DataTypeDef, kind: _FunctionDataTypeDef) -> TypeGuard[_FunctionDataTypeDef]: ...
+    @classmethod
+    @overload
+    def is_type(cls, dt: _DataTypeDef, kind: _IntervalDataTypeDef) -> TypeGuard[_IntervalDataTypeDef]: ...
     @classmethod
     @overload
     def is_type(cls, dt: _DataTypeDef, kind: _MappingDataTypeDef) -> TypeGuard[_MappingDataTypeDef]: ...

@@ -7,6 +7,20 @@ this list is curated by the development team for note worthy changes.
 Version 5.x.x
 -------------
 
+Version 5.1.0
+^^^^^^^^^^^^^
+
+* Added the new :py:attr:`~rule_engine.types.DataType.INTERVAL` data type for continuous intervals with independently
+  open or closed endpoints, e.g. ``[1..10)`` or ``[d"2026-01-01"..d"2027-01-01")``. Endpoints are restricted to
+  :py:attr:`~rule_engine.types.DataType.FLOAT`, :py:attr:`~rule_engine.types.DataType.DATETIME` and
+  :py:attr:`~rule_engine.types.DataType.TIMEDELTA` and either side may be omitted for an unbounded interval.
+* Added the :py:class:`~rule_engine.types.Interval` (and :py:class:`~rule_engine.types.AtomicInterval`) native value
+  type backing the new data type.
+* Added the interval-algebra operators: ``in`` for membership, ``&`` for intersection, ``|`` for union, ``^`` for
+  symmetric difference and ``-`` for set difference. Algebra results may span multiple disjoint pieces, e.g.
+  ``[1..10) - [3..5)`` is both ``[1..3)`` and ``[5..10)``.
+* Added the ``is_empty`` and ``length`` attributes to interval values.
+
 Version 5.0.0
 ^^^^^^^^^^^^^
 

@@ -66,6 +66,18 @@ def _value_to_set_result_type(object_type: _DataTypeDef) -> _DataTypeDef:
     assert isinstance(object_type, _CollectionDataTypeDef)
     return types.DataType.SET(object_type.value_type)
 
+def _interval_length_result_type(object_type: _DataTypeDef) -> _DataTypeDef:
+    # this resolver is invoked at parse time with the interval's type and again at runtime with the *result* value's
+    # type (see _AttributeResolverFunction); only the parse-time call carries endpoint type information
+    if not types.DataType.is_type(object_type, types.DataType.INTERVAL):
+        return types.DataType.UNDEFINED
+    member = object_type.value_type
+    if member == types.DataType.FLOAT:
+        return types.DataType.FLOAT
+    if member in (types.DataType.DATETIME, types.DataType.TIMEDELTA):
+        return types.DataType.TIMEDELTA
+    return types.DataType.UNDEFINED
+
 def _value_with_result_type(name: str, object_type: _DataTypeDef) -> _DataTypeDef:
     return types.DataType.FUNCTION(name, argument_types=(object_type,), return_type=types.DataType.BOOLEAN)
 
@@ -295,6 +307,21 @@ class _AttributeResolver(object):
     @attribute('days', types.DataType.TIMEDELTA, result_type=types.DataType.FLOAT)
     def timedelta_days(self, value: datetime.timedelta) -> int:
         return value.days
+
+    @attribute('is_empty', types.DataType.INTERVAL, result_type=types.DataType.BOOLEAN)
+    def interval_is_empty(self, value: types.Interval) -> bool:
+        return value.is_empty
+
+    @attribute('length', types.DataType.INTERVAL, type_resolver=_interval_length_result_type)
+    def interval_length(self, value: types.Interval) -> decimal.Decimal | datetime.timedelta:
+        total: decimal.Decimal | datetime.timedelta | None = None
+        for atom in value:
+            if atom.left is None or atom.right is None:
+                raise errors.EvaluationError('data type mismatch (the length of an unbounded interval can not be measured)')
+            span = atom.right - atom.left
+            total = span if total is None else total + span
+        # an empty interval carries no domain information at runtime, so a numeric zero is as good a value as any
+        return total if total is not None else decimal.Decimal(0)
 
     @attribute('seconds', types.DataType.TIMEDELTA, result_type=types.DataType.FLOAT)
     def timedelta_seconds(self, value: datetime.timedelta) -> int:

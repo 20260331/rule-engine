@@ -229,6 +229,56 @@ class _CollectionDataTypeDef(_DataTypeDef):
 class _ArrayDataTypeDef(_CollectionDataTypeDef):
     pass
 
+class _IntervalDataTypeDef(_DataTypeDef):
+    """
+    A parameterized definition for continuous :py:class:`~rule_engine.types.interval.Interval` values. The single
+    *value_type* parameter describes the endpoint domain and must be either :py:attr:`~.DataType.FLOAT`,
+    :py:attr:`~.DataType.DATETIME` or :py:attr:`~.DataType.TIMEDELTA`. Unlike the discrete collection types, an
+    interval is not iterable - it describes a continuous set of points and is queried through membership checks
+    and the interval-algebra operators.
+
+    .. versionadded:: 5.1.0
+    """
+    __slots__ = ('value_type',)
+    value_type: _DataTypeDef
+    # the scalar types that are valid interval endpoints; checked by name to avoid an import of DataType (which in
+    # turn imports this module)
+    _valid_value_type_names = ('DATETIME', 'FLOAT', 'TIMEDELTA', 'UNDEFINED')
+    def __init__(self, name: str, python_type: type, value_type: _DataTypeDef = _DATA_TYPE_UNDEFINED) -> None:
+        super(_IntervalDataTypeDef, self).__init__(name, python_type)
+        self.is_scalar = False
+        self.value_type = _IntervalDataTypeDef._validate_value_type(value_type)
+
+    @staticmethod
+    def _validate_value_type(value_type: _DataTypeDef) -> _DataTypeDef:
+        if value_type.name not in _IntervalDataTypeDef._valid_value_type_names:
+            raise errors.EngineError('the {} data type may not be used as an INTERVAL endpoint'.format(value_type.name))
+        return value_type
+
+    def __call__(self, value_type: _DataTypeDef) -> '_IntervalDataTypeDef':
+        """
+        :param value_type: The data type of the interval's endpoints, either :py:attr:`~.DataType.FLOAT`,
+                :py:attr:`~.DataType.DATETIME` or :py:attr:`~.DataType.TIMEDELTA`.
+        """
+        return self.__class__(self.name, self.python_type, value_type=value_type)
+
+    def __repr__(self) -> str:
+        return "<{} name={} python_type={} value_type={} >".format(
+                self.__class__.__name__,
+                self.name,
+                self.python_type.__name__,
+                self.value_type.name
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not super().__eq__(other):
+            return False
+        assert isinstance(other, _IntervalDataTypeDef)
+        return self.value_type == other.value_type
+
+    def __hash__(self) -> int:
+        return hash((self.python_type, self.is_scalar, hash(self.value_type)))
+
 class _SetDataTypeDef(_CollectionDataTypeDef):
     def __init__(
             self,

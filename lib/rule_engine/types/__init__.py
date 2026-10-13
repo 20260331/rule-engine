@@ -44,13 +44,18 @@ from .definitions import _ArrayDataTypeDef
 from .definitions import _CollectionDataTypeDef
 from .definitions import _DataTypeDef
 from .definitions import _FunctionDataTypeDef
+from .definitions import _IntervalDataTypeDef
 from .definitions import _MappingDataTypeDef
 from .definitions import _NullableDataTypeDef
 from .definitions import _ReferenceDataTypeDef
 from ._object import _ObjectDataTypeDef
+from .interval import AtomicInterval
+from .interval import Interval
 
 __all__ = (
+        'AtomicInterval',
         'DataType',
+        'Interval',
         'NoneType',
         'coerce_value',
         'is_integer_number',

@@ -47,6 +47,8 @@ Classes
 
    .. automethod:: FUNCTION
 
+   .. automethod:: INTERVAL
+
    .. automethod:: MAPPING
 
    .. autoattribute:: NULL
@@ -84,3 +86,11 @@ Classes
       :annotation:
 
    .. autoattribute:: UNDEFINED
+
+.. autoclass:: AtomicInterval
+   :members:
+   :special-members: __contains__
+
+.. autoclass:: Interval
+   :members:
+   :special-members: __and__, __contains__, __eq__, __hash__, __len__, __or__, __sub__, __xor__, __bool__

@@ -430,6 +430,101 @@ class ParserLiteralTests(ParserTestsBase):
         self.assertLiteralStatementEvalEqual("{1}", set([decimal.Decimal('1')]))
         self.assertLiteralStatementEvalEqual("{'Alice', 'Bob'}", set(['Alice', 'Bob']))
 
+    def test_parse_interval(self):
+        interval = types.Interval
+        closed = {'left_closed': True, 'right_closed': True}
+        statement = self.assertStatementType('[1..10]', ast.IntervalExpression).expression
+        self.assertEqual(statement.value, interval(1, 10, **closed))
+        self.assertEqual(statement.result_type, types.DataType.INTERVAL(types.DataType.FLOAT))
+        self.assertLiteralStatementEvalEqual('(1..10)', interval(1, 10, left_closed=False, right_closed=False))
+        self.assertLiteralStatementEvalEqual('[1..10)', interval(1, 10, left_closed=True, right_closed=False))
+        self.assertLiteralStatementEvalEqual('(1..10]', interval(1, 10, left_closed=False, right_closed=True))
+        # whitespace around the range operator is optional
+        self.assertLiteralStatementEvalEqual('[ 1 .. 10 ]', interval(1, 10, **closed))
+
+    def test_parse_interval_unbounded(self):
+        statement = self.assertStatementType('[..]', ast.IntervalExpression).expression
+        self.assertEqual(statement.value, types.Interval())
+        self.assertLiteralStatementEvalEqual('[1..]', types.Interval(1, None))
+        self.assertLiteralStatementEvalEqual('(1..)', types.Interval(1, None, left_closed=False))
+        self.assertLiteralStatementEvalEqual('[..10]', types.Interval(None, 10, right_closed=True))
+        self.assertLiteralStatementEvalEqual('(..10)', types.Interval(None, 10, right_closed=False))
+
+    def test_parse_interval_endpoint_types(self):
+        interval_expression = self.assertStatementType(
+                '[d"2020-01-01"..d"2021-01-01"]', ast.IntervalExpression
+        ).expression
+        self.assertEqual(interval_expression.result_type, types.DataType.INTERVAL(types.DataType.DATETIME))
+        self.assertTrue(datetime.datetime(2020, 6, 1, tzinfo=dateutil.tz.tzutc()) in interval_expression.value)
+
+        interval_expression = self.assertStatementType(
+                '[t"P1D"..t"P7D"]', ast.IntervalExpression
+        ).expression
+        self.assertEqual(interval_expression.result_type, types.DataType.INTERVAL(types.DataType.TIMEDELTA))
+        self.assertTrue(datetime.timedelta(days=3) in interval_expression.value)
+
+    def test_parse_interval_empty_and_point(self):
+        statement = self._parse('(1..1)', self.context)
+        self.assertIsInstance(statement.expression, ast.IntervalExpression)
+        self.assertTrue(statement.expression.value.is_empty)
+        statement = self._parse('[5..5]', self.context)
+        self.assertIn(decimal.Decimal('5'), statement.expression.value)
+
+    def test_parse_interval_dynamic_endpoints(self):
+        # endpoints that reference symbols are not reduced at parse time but evaluate to the same value
+        typed_context = engine.Context(type_resolver=engine.type_resolver_from_dict({
+                'start': types.DataType.FLOAT
+        }))
+        statement = self._parse('[start..10]', typed_context)
+        self.assertIsInstance(statement.expression, ast.IntervalBoundsExpression)
+        self.assertEqual(
+                statement.evaluate({'start': decimal.Decimal('1')}),
+                types.Interval(1, 10, left_closed=True, right_closed=True)
+        )
+        statement = self._parse('[d"2000-01-01" .. $now]', self.context)
+        self.assertIsInstance(statement.expression, ast.IntervalBoundsExpression)
+        self.assertEqual(statement.expression.result_type, types.DataType.INTERVAL(types.DataType.DATETIME))
+
+    def test_parse_interval_type_errors(self):
+        # mismatched endpoint domains
+        with self.assertRaises(errors.EvaluationError):
+            self._parse('[1..d"2020-01-01"]', self.context)
+        # invalid endpoint types
+        with self.assertRaises(errors.EvaluationError):
+            self._parse('["a".."z"]', self.context)
+        with self.assertRaises(errors.EvaluationError):
+            self._parse('[1..[1, 2]]', self.context)
+        # non-finite numeric endpoints (nan / infinity) are rejected; unbounded sides omit the endpoint
+        with self.assertRaises(errors.EvaluationError):
+            self._parse('[nan..10]', self.context)
+        with self.assertRaises(errors.EvaluationError):
+            self._parse('[1..inf]', self.context)
+        # a range outside of interval brackets is a syntax error
+        with self.assertRaises(errors.SyntaxError):
+            self._parse('1..10', self.context)
+        # membership requires the member type to match the endpoint domain
+        typed_context = engine.Context(type_resolver=engine.type_resolver_from_dict({
+                'word': types.DataType.STRING,
+                'window': types.DataType.INTERVAL(types.DataType.FLOAT)
+        }))
+        with self.assertRaises(errors.EvaluationError):
+            self._parse('word in window', typed_context)
+
+    def test_parse_interval_membership_and_algebra(self):
+        self.assertLiteralStatementEvalEqual('5 in [1..10)', True)
+        self.assertLiteralStatementEvalEqual('10 in [1..10)', False)
+        self.assertLiteralStatementEvalEqual('[0..10] & [5..15] == [5..10]', True)
+        self.assertLiteralStatementEvalEqual('[0..10) | [9..20] == [0..20]', True)
+        self.assertLiteralStatementEvalEqual('[1..10) - [3..5) == [1..3) | [5..10)', True)
+        self.assertLiteralStatementEvalEqual('([1..5) & [5..10)).is_empty', True)
+        self.assertLiteralStatementEvalEqual('[1..10].length', decimal.Decimal('9'))
+
+    def test_parse_interval_float_tokens_unchanged(self):
+        # the float token must still accept trailing and leading dots in decimal values
+        self.assertLiteralStatementEvalEqual('1. == 1.0', True)
+        self.assertLiteralStatementEvalEqual('.5 == 0.5', True)
+        self.assertLiteralStatementEvalEqual('1.5e0 == 1.5', True)
+
     def test_parse_string(self):
         self.assertLiteralStatementEqual("'Alice'", ast.StringExpression, 'Alice')
         self.assertLiteralStatementEqual('"Alice"', ast.StringExpression, 'Alice')

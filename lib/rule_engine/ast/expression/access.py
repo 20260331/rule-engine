@@ -64,6 +64,10 @@ class ContainsExpression(ExpressionBase):
         if container_type == DataType.BYTES or container_type == DataType.STRING:
             if member_type != DataType.UNDEFINED and member_type != container_type:
                 raise errors.EvaluationError('data type mismatch')
+        elif DataType.is_type(container_type, DataType.INTERVAL):
+            if member_type != DataType.UNDEFINED and member_type != DataType.NULL:
+                if not DataType.is_compatible(member_type, container_type.value_type):
+                    raise errors.EvaluationError('data type mismatch')
         elif DataType.is_type(_resolve_type(container_type, context), DataType.OBJECT):
             raise errors.EvaluationError('data type mismatch (containment check on OBJECT)')
         elif container_type != DataType.UNDEFINED and container_type.is_scalar:

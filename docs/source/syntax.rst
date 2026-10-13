@@ -31,7 +31,7 @@ The following table outlines all operators that can be used in Rule Engine expre
 |              |                              | :py:attr:`~.DataType.TIMEDELTA` :sup:`1`                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``-``        | Subtraction                  | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.DATETIME`,    |
-|              |                              | :py:attr:`~.DataType.TIMEDELTA`                                 |
+|              |                              | :py:attr:`~.DataType.TIMEDELTA`, :py:attr:`~.DataType.INTERVAL` |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``*``        | Multiplication               | :py:attr:`~.DataType.FLOAT`                                     |
 +--------------+------------------------------+-----------------------------------------------------------------+
@@ -45,11 +45,14 @@ The following table outlines all operators that can be used in Rule Engine expre
 +--------------+------------------------------+-----------------------------------------------------------------+
 | **Bitwise-Arithmetic Operators**                                                                              |
 +--------------+------------------------------+-----------------------------------------------------------------+
-| ``&``        | Bitwise-and :sup:`2`         | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.SET`          |
+| ``&``        | Bitwise-and :sup:`2`         | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.SET`,         |
+|              |                              | :py:attr:`~.DataType.INTERVAL` :sup:`6`                         |
 +--------------+------------------------------+-----------------------------------------------------------------+
-| ``|``        | Bitwise-or :sup:`2`          | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.SET`          |
+| ``|``        | Bitwise-or :sup:`2`          | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.SET`,         |
+|              |                              | :py:attr:`~.DataType.INTERVAL` :sup:`6`                         |
 +--------------+------------------------------+-----------------------------------------------------------------+
-| ``^``        | Bitwise-xor :sup:`2`         | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.SET`          |
+| ``^``        | Bitwise-xor :sup:`2`         | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.SET`,         |
+|              |                              | :py:attr:`~.DataType.INTERVAL` :sup:`6`                         |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``>>``       | Bitwise right shift :sup:`2` | :py:attr:`~.DataType.FLOAT`                                     |
 +--------------+------------------------------+-----------------------------------------------------------------+
@@ -114,20 +117,21 @@ The following table outlines all operators that can be used in Rule Engine expre
 | **Membership Operators**                                                                                      |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``in``       | Membership check             | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BYTES`,       |
-|              |                              | :py:attr:`~.DataType.MAPPING`, :py:attr:`~.DataType.SET`,       |
-|              |                              | :py:attr:`~.DataType.STRING`                                    |
+|              |                              | :py:attr:`~.DataType.INTERVAL`, :py:attr:`~.DataType.MAPPING`,  |
+|              |                              | :py:attr:`~.DataType.SET`, :py:attr:`~.DataType.STRING`         |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | **Accessor Operators**                                                                                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``.``        | Attribute access             | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BYTES`,       |
-|              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.MAPPING`,  |
-|              |                              | :py:attr:`~.DataType.SET`, :py:attr:`~.DataType.STRING`,        |
-|              |                              | :py:attr:`~.DataType.TIMEDELTA`                                 |
+|              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.INTERVAL`, |
+|              |                              | :py:attr:`~.DataType.MAPPING`, :py:attr:`~.DataType.SET`,       |
+|              |                              | :py:attr:`~.DataType.STRING`, :py:attr:`~.DataType.TIMEDELTA`   |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``&.``       | Safe attribute access        | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BYTES`,       |
-|              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.MAPPING`,  |
-|              |                              | :py:attr:`~.DataType.NULL`, :py:attr:`~.DataType.SET`,          |
-|              |                              | :py:attr:`~.DataType.STRING`, :py:attr:`~.DataType.TIMEDELTA`   |
+|              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.INTERVAL`, |
+|              |                              | :py:attr:`~.DataType.MAPPING`, :py:attr:`~.DataType.NULL`,      |
+|              |                              | :py:attr:`~.DataType.SET`, :py:attr:`~.DataType.STRING`,        |
+|              |                              | :py:attr:`~.DataType.TIMEDELTA`                                 |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``[``        | Item lookup                  | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BYTES`,       |
 |              |                              | :py:attr:`~.DataType.MAPPING`, :py:attr:`~.DataType.STRING`     |
@@ -162,6 +166,12 @@ precedence table — tighter than ``not`` / ``and`` / ``or`` / ``?`` ``:``, loos
 comparison operators. ``a or b ?? c`` parses as ``a or (b ?? c)``, ``cond ? a ?? b : c`` puts the coalesce on the
 true branch, and ``a ?? b ?? c`` is right-associative as ``a ?? (b ?? c)``. Mixing with ``==`` requires explicit
 parentheses — ``(name ?? '') == 'x'``.
+
+:sup:`6` When both operands are :py:attr:`~.DataType.INTERVAL` values the bitwise operators act as the interval
+algebra operations instead of bitwise arithmetic: ``&`` computes the intersection, ``|`` the union and ``^`` the
+symmetric difference. The ``-`` operator computes the set difference of two intervals. Results are not limited to a
+single continuous piece and may be represented by multiple disjoint pieces (e.g. the difference
+``[1..10) - [3..5)`` contains both ``[1..3)`` and ``[5..10)``).
 
 Accessor Operators
 """"""""""""""""""
@@ -299,6 +309,8 @@ difference comes in an optional leading character before the opening quote. Eith
 ``s`` will specify a standard :py:attr:`~.DataType.STRING` value, a single ``r`` will specify a raw
 :py:attr:`~.DataType.STRING` value in which backslashes are treated literally, while a single ``d`` will specify a
 :py:attr:`~.DataType.DATETIME` value, and a single ``t`` will specify a :py:attr:`~.DataType.TIMEDELTA` value.
+:py:attr:`~.DataType.INTERVAL` values instead use bracket notation with a ``..`` separator, see
+:ref:`literal-interval-values`.
 
 Raw string literals (``r'...'`` / ``r"..."``) are useful when writing values that contain backslashes such as regular
 expressions or Windows-style paths. In a raw string, ``\`` is always a literal backslash — no escape sequences are
@@ -368,6 +380,47 @@ Example rules showing equivalent literal expressions:
 
 * ``t"P1D" == t"PT24H"`` (24 hours in a day)
 * ``t"P1D" == t"PT1440M"`` (1,440 minutes in a day)
+
+.. _literal-interval-values:
+
+Literal INTERVAL Values
+"""""""""""""""""""""""
+
+.. versionadded:: 5.1.0
+
+:py:attr:`~.DataType.INTERVAL` literals describe a continuous range using the standard mathematical bracket
+notation with ``..`` separating the two endpoints. The opening and closing brackets independently choose whether
+each endpoint is included (closed, ``[`` / ``]``) or excluded (open, ``(`` / ``)``):
+
+* ``[1..10]`` includes both ``1`` and ``10``.
+* ``(1..10)`` excludes both endpoints.
+* ``[1..10)`` includes ``1`` but excludes ``10``.
+* ``(1..10]`` excludes ``1`` but includes ``10``.
+
+Either endpoint may be omitted to leave that side unbounded, so ``[..10)`` contains every value below ``10`` while
+``[1..]`` contains ``1`` and everything above it; ``[..]`` is the fully unbounded interval.
+
+Endpoint expressions may be any :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.DATETIME` or
+:py:attr:`~.DataType.TIMEDELTA` expression as long as both endpoints share a type, so validity windows and duration
+bands can refer to symbols or built-ins, e.g. ``[d"2026-01-01" .. $now]``. A single point is written with both
+brackets closed (``[5..5]``); a notation that contains no point (e.g. ``(1..1)``) yields the empty interval.
+
+Membership is tested with the ``in`` operator and the interval-algebra operators combine intervals:
+
+.. code-block::
+
+  price in (0..1000)                    # true for prices strictly between 0 and 1000
+  when in [d"2026-01-01"..d"2027-01-01")
+  [0..10] & [5..15]                     # intersection: [5..10]
+  [0..10) | [9..20]                     # union: [0..20]
+  [1..10) - [3..5)                      # difference: [1..3) and [5..10)
+  [0..10] ^ [5..15]                     # symmetric difference
+  ([1..5) & [5..10)).is_empty           # true: the intervals only meet at the excluded point
+
+The ``length`` attribute measures the total span across the interval's pieces (a :py:attr:`~.DataType.FLOAT` for
+numeric intervals and a :py:attr:`~.DataType.TIMEDELTA` for datetime or timedelta intervals); it raises an
+:py:class:`~rule_engine.errors.EvaluationError` for unbounded intervals. The ``is_empty`` attribute reports whether
+the interval contains any point.
 
 Comments
 ^^^^^^^^

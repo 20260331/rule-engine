@@ -147,6 +147,18 @@ Literal Expressions
    .. autoattribute:: result_type
       :annotation: = FUNCTION
 
+.. autoclass:: IntervalExpression
+   :show-inheritance:
+
+   .. autoattribute:: result_type
+      :annotation: = INTERVAL
+
+.. autoclass:: IntervalBoundsExpression
+   :show-inheritance:
+
+   .. autoattribute:: result_type
+      :annotation: = INTERVAL
+
 .. autoclass:: MappingExpression
    :show-inheritance:
 

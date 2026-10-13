@@ -20,6 +20,7 @@ Python with some inspiration from Ruby. Some features of this language includes:
 - Matching strings with regular expressions
 - Datetime datatypes
 - Compound datatypes (equivalents for Python dict, list and set types)
+- Continuous interval datatype with open/closed and unbounded endpoints for numeric, datetime and timedelta domains
 - Data attributes
 - Thread safety
 

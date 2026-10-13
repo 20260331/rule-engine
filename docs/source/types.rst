@@ -27,6 +27,8 @@ compatible with. For a information regarding supported operations, see the
 +-------------------------------+-------------------------------+
 | :py:attr:`~DataType.FUNCTION` | *anything callable*           |
 +-------------------------------+-------------------------------+
+| :py:attr:`~DataType.INTERVAL` | :py:class:`~.Interval`        |
++-------------------------------+-------------------------------+
 | :py:attr:`~DataType.MAPPING`  | :py:class:`dict`              |
 +-------------------------------+-------------------------------+
 | :py:attr:`~DataType.NULL`     | :py:class:`NoneType`          |
@@ -340,7 +342,31 @@ Version :release:`4.0.0` added the :py:attr:`~DataType.FUNCTION` datatype. This 
 to rule authors. Rule Engine contains a few :ref:`builtin functions<builtin-functions>` that can be used by default.
 Additional functions must be defined in Python and can either be added to the evaluated object or by
 :ref:`extending the builtin symbols<changing-builtin-symbols>`. It is only possible to call a function from within the
-rule text. Functions can not be defined by rule authors as other data types can be.
+rule text. Functions can not be defined by rule authors as other data types can.
+
+INTERVAL
+--------
+
+.. versionadded:: 5.1.0
+
+The :py:attr:`~DataType.INTERVAL` data type represents a continuous set of ordered points such as a price band or a
+validity window, complementing the discrete :py:attr:`~DataType.ARRAY` and :py:attr:`~DataType.SET` types which can
+only enumerate their members. An interval is parameterized by the type of its endpoints, which is restricted to the
+ordered, numeric-style types :py:attr:`~DataType.FLOAT`, :py:attr:`~DataType.DATETIME` and
+:py:attr:`~DataType.TIMEDELTA`:
+
+.. code-block:: python
+
+   DataType.INTERVAL(DataType.FLOAT)      # a numeric band such as a price range
+   DataType.INTERVAL(DataType.DATETIME)   # a validity window
+   DataType.INTERVAL(DataType.TIMEDELTA)  # a duration band
+
+At runtime the type is backed by the immutable :py:class:`~rule_engine.types.Interval` value class. Unlike the
+collection types an interval is **not iterable** - its membership is continuous and generally infinite - so it can
+not be used with array comprehensions, item access or slicing. Membership is tested with the ``in`` operator instead
+and the interval-algebra operators combine intervals into new intervals (a result may span multiple disjoint pieces,
+for example when subtracting a middle section). See :ref:`literal-interval-values` for the literal syntax and the
+Supported Operations table for the available operators.
 
 TIMEDELTA
 ---------

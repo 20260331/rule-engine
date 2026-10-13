@@ -38,6 +38,7 @@ from typing import Any, Callable
 from ... import errors
 from ...types import DataType, coerce_value
 from ...types import _DataTypeDef
+from ...types.interval import Interval
 
 from ..base import _assert_is_bytes, _assert_is_natural_number, _assert_is_numeric, _assert_is_string, _assert_not_nullable, _is_reduced
 from .base import BinaryExpressionBase
@@ -88,13 +89,25 @@ class SubtractExpression(BinaryExpressionBase):
 
     .. versionadded:: 3.5.0
     """
-    compatible_types: tuple[_DataTypeDef, ...] = (DataType.FLOAT, DataType.DATETIME, DataType.TIMEDELTA)
+    compatible_types: tuple[_DataTypeDef, ...] = (DataType.FLOAT, DataType.DATETIME, DataType.TIMEDELTA, DataType.INTERVAL)
     result_type: _DataTypeDef = DataType.UNDEFINED
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super(SubtractExpression, self).__init__(*args, **kwargs)
         _assert_not_nullable(self.left.result_type, role="left operand of '-'")
         _assert_not_nullable(self.right.result_type, role="right operand of '-'")
+        left_type = self.left.result_type
+        right_type = self.right.result_type
+        if DataType.is_type(left_type, DataType.INTERVAL) or DataType.is_type(right_type, DataType.INTERVAL):
+            if not (DataType.is_type(left_type, DataType.INTERVAL) and DataType.is_type(right_type, DataType.INTERVAL)):
+                raise errors.EvaluationError('data type mismatch')
+            if not DataType.is_compatible(left_type, right_type):
+                raise errors.EvaluationError('data type mismatch')
+            member_type = left_type.value_type
+            if member_type == DataType.UNDEFINED:
+                member_type = right_type.value_type
+            self.result_type = DataType.INTERVAL(member_type)
+            return
         if self.left.result_type != DataType.UNDEFINED and self.right.result_type != DataType.UNDEFINED:
             if self.left.result_type == DataType.DATETIME:
                 if self.right.result_type == DataType.DATETIME:
@@ -115,6 +128,10 @@ class SubtractExpression(BinaryExpressionBase):
     def _op_sub(self, thing: Any) -> Any:
         left_value = self.left.evaluate(thing)
         right_value = self.right.evaluate(thing)
+        if isinstance(left_value, Interval):
+            if not isinstance(right_value, Interval):
+                raise errors.EvaluationError('data type mismatch')
+            return left_value - right_value
         if isinstance(left_value, datetime.datetime):
             if not isinstance(right_value, (datetime.datetime, datetime.timedelta)):
                 raise errors.EvaluationError('data type mismatch (not a datetime or timedelta value)')
@@ -157,12 +174,24 @@ class BitwiseExpression(BinaryExpressionBase):
     """
     A class for representing bitwise arithmetic expressions from the grammar text such as XOR and shifting operations.
     """
-    compatible_types: tuple[_DataTypeDef, ...] = (DataType.FLOAT, DataType.SET)
+    compatible_types: tuple[_DataTypeDef, ...] = (DataType.FLOAT, DataType.INTERVAL, DataType.SET)
     result_type: _DataTypeDef = DataType.UNDEFINED
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super(BitwiseExpression, self).__init__(*args, **kwargs)
         _assert_not_nullable(self.left.result_type, role='left bitwise operand')
         _assert_not_nullable(self.right.result_type, role='right bitwise operand')
+        left_type = self.left.result_type
+        right_type = self.right.result_type
+        if DataType.is_type(left_type, DataType.INTERVAL) or DataType.is_type(right_type, DataType.INTERVAL):
+            if not (DataType.is_type(left_type, DataType.INTERVAL) and DataType.is_type(right_type, DataType.INTERVAL)):
+                raise errors.EvaluationError('data type mismatch')
+            if not DataType.is_compatible(left_type, right_type):
+                raise errors.EvaluationError('data type mismatch')
+            member_type = left_type.value_type
+            if member_type == DataType.UNDEFINED:
+                member_type = right_type.value_type
+            self.result_type = DataType.INTERVAL(member_type)
+            return
         # don't use DataType.is_compatible, because for sets the member type isn't important
         if self.left.result_type != DataType.UNDEFINED and self.right.result_type != DataType.UNDEFINED:
             if self.left.result_type.__class__ != self.right.result_type.__class__:
@@ -184,6 +213,8 @@ class BitwiseExpression(BinaryExpressionBase):
             return self._op_bitwise_float(op, thing, left)
         elif DataType.is_type(DataType.from_value(left), DataType.SET):
             return self._op_bitwise_set(op, thing, left)
+        elif isinstance(left, Interval):
+            return self._op_bitwise_interval(op, thing, left)
         raise errors.EvaluationError('data type mismatch')
 
     def _op_bitwise_float(self, op: Callable[[Any, Any], Any], thing: Any, left: Any) -> Any:
@@ -195,6 +226,12 @@ class BitwiseExpression(BinaryExpressionBase):
     def _op_bitwise_set(self, op: Callable[[Any, Any], Any], thing: Any, left: Any) -> Any:
         right = self.right.evaluate(thing)
         if not DataType.is_compatible(DataType.from_value(right), DataType.SET):
+            raise errors.EvaluationError('data type mismatch')
+        return op(left, right)
+
+    def _op_bitwise_interval(self, op: Callable[[Any, Any], Any], thing: Any, left: Interval) -> Any:
+        right = self.right.evaluate(thing)
+        if not isinstance(right, Interval):
             raise errors.EvaluationError('data type mismatch')
         return op(left, right)
 

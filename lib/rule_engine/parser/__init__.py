@@ -110,6 +110,7 @@ class Parser(ParserBase):
             '.':   'ATTR',
             '&.':  'ATTR_SAFE',
             '??':  'COALESCE',
+            '..':  'RANGE',
             'in':  'IN',
     }
     reserved_words = {
@@ -151,11 +152,14 @@ class Parser(ParserBase):
     t_SUB              = r'\-'
     t_MOD              = r'\%'
     t_COMMA            = r'\,'
+    t_RANGE            = r'\.\.'
     t_LBRACKET         = r'((?<=\S)&)?\['
     t_RBRACKET         = r'\]'
     t_LBRACE           = r'\{'
     t_RBRACE           = r'\}'
-    t_FLOAT            = r'0(b[01]+|o[0-7]+|x[0-9a-fA-F]+)|[0-9]+(\.[0-9]*)?([eE][+-]?[0-9]+)?|\.[0-9]+([eE][+-]?[0-9]+)?'
+    # the trailing dot of a decimal value is only consumed when the next character is not another dot, so that the
+    # interval range operator (``..``) is tokenized correctly, e.g. ``1..5`` is the three tokens ``1``, ``..``, ``5``
+    t_FLOAT            = r'0(b[01]+|o[0-7]+|x[0-9a-fA-F]+)|[0-9]+(\.(?![.])[0-9]*)?([eE][+-]?[0-9]+)?|\.[0-9]+([eE][+-]?[0-9]+)?'
     # attributes must be valid symbol names so the right side is more specific
     t_ATTR             = r'(?<=\S)\.(?=[a-zA-Z_][a-zA-Z0-9_]*)'
     t_ATTR_SAFE        = r'(?<=\S)&\.(?=[a-zA-Z_][a-zA-Z0-9_]*)'
@@ -490,6 +494,51 @@ class Parser(ParserBase):
                    | LBRACE ary_members COMMA RBRACE
         """
         p[0] = _DeferredAstNode(ast.SetExpression, args=(self.context, tuple(p[2])))
+
+    def p_expression_interval(self, p: Any) -> None:
+        """
+        object : LBRACKET expression RANGE expression RBRACKET
+               | LBRACKET expression RANGE expression RPAREN
+               | LPAREN  expression RANGE expression RBRACKET
+               | LPAREN  expression RANGE expression RPAREN
+               | LBRACKET expression RANGE RBRACKET
+               | LBRACKET expression RANGE RPAREN
+               | LPAREN  expression RANGE RBRACKET
+               | LPAREN  expression RANGE RPAREN
+               | LBRACKET RANGE expression RBRACKET
+               | LBRACKET RANGE expression RPAREN
+               | LPAREN  RANGE expression RBRACKET
+               | LPAREN  RANGE expression RPAREN
+               | LBRACKET RANGE RBRACKET
+               | LBRACKET RANGE RPAREN
+               | LPAREN  RANGE RBRACKET
+               | LPAREN  RANGE RPAREN
+        """
+        left_closed = p[1] == '['
+        right_closed = p[len(p) - 1] == ']'
+        if len(p) == 6:
+            # both endpoints are present
+            left, right = p[2], p[4]
+        elif len(p) == 5:
+            if p[2] == '..':
+                # the left endpoint was omitted (unbounded lower bound)
+                left, right = None, p[3]
+            else:
+                # the right endpoint was omitted (unbounded upper bound)
+                left, right = p[2], None
+        else:
+            # neither endpoint is present, i.e. the fully unbounded interval
+            left, right = None, None
+        p[0] = _DeferredAstNode(
+                ast.IntervalBoundsExpression,
+                args=(self.context,),
+                kwargs={
+                        'left': left,
+                        'right': right,
+                        'left_closed': left_closed,
+                        'right_closed': right_closed,
+                }
+        )
 
     def p_expression_string(self, p: Any) -> None:
         'object : STRING'

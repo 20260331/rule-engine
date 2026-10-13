@@ -101,6 +101,9 @@ class SymbolExpression(ExpressionBase):
         if DataType.is_compatible(value_type, effective_type):
             if effective_type.is_scalar:
                 return value
+            if DataType.is_type(effective_type, DataType.INTERVAL):
+                # intervals are immutable native values with no discrete members to validate for null values
+                return value
             assert isinstance(effective_type, (_CollectionDataTypeDef, _MappingDataTypeDef))
             assert isinstance(value_type, (_CollectionDataTypeDef, _MappingDataTypeDef))
             if effective_type.value_type == DataType.UNDEFINED:

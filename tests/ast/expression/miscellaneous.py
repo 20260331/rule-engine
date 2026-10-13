@@ -136,6 +136,21 @@ class ContainsExpressionTests(unittest.TestCase):
         with self.assertRaises(errors.EvaluationError):
             ast.ContainsExpression(context, container, member).evaluate(None)
 
+    def test_ast_expression_contains_interval(self):
+        interval = ast.LiteralExpressionBase.from_value(
+                context,
+                types.Interval(1, 10, left_closed=True, right_closed=False)
+        )
+        self.assertTrue(ast.ContainsExpression(context, interval, ast.FloatExpression(context, 1.0)).evaluate(None))
+        self.assertFalse(ast.ContainsExpression(context, interval, ast.FloatExpression(context, 10.0)).evaluate(None))
+        self.assertFalse(ast.ContainsExpression(context, interval, ast.NullExpression(context)).evaluate(None))
+        # the member type must match the interval's endpoint type at parse time
+        with self.assertRaises(errors.EvaluationError):
+            ast.ContainsExpression(context, interval, ast.StringExpression(context, 'Rule Engine'))
+        # intervals are not iterable and reject item access like sets do
+        with self.assertRaises(errors.EvaluationError):
+            ast.GetItemExpression(context, interval, ast.FloatExpression(context, 0.0))
+
 class GetItemExpressionTests(unittest.TestCase):
     containers = {
             types.DataType.ARRAY:   ast.LiteralExpressionBase.from_value(context, ['one', 'two']),  # ARRAY

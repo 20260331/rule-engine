@@ -147,6 +147,9 @@ class TernaryExpression(ExpressionBase):
             self.result_type = true_type
         elif DataType.is_type(true_type, DataType.ARRAY) and DataType.is_type(false_type, DataType.ARRAY):
             self.result_type = DataType.ARRAY
+        elif DataType.is_type(true_type, DataType.INTERVAL) and DataType.is_type(false_type, DataType.INTERVAL):
+            # both branches are intervals but with differing endpoint types; leave the member type unparameterized
+            self.result_type = DataType.INTERVAL
         # todo: the other compound types should be checked here as well.
         self.result_type = _propagate_nullable(self.result_type, self.case_true.result_type, self.case_false.result_type)
 

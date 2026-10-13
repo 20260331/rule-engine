@@ -37,11 +37,37 @@ from .. import errors
 from ..parser.utilities import parse_datetime, parse_float, parse_timedelta
 from ..types import DataType, coerce_value
 from ..types import _DataTypeDef
+from ..types.interval import Interval
 
-from .base import ExpressionBase, LiteralExpressionBase, _is_reduced, _iterable_member_value_type
+from .base import (
+        ExpressionBase,
+        LiteralExpressionBase,
+        _assert_not_nullable,
+        _is_reduced,
+        _iterable_member_value_type,
+)
 
 if TYPE_CHECKING:
     from ..engine.context import Context
+
+# the scalar data types that are permitted as continuous interval endpoints
+_interval_endpoint_types: tuple[_DataTypeDef, ...] = (DataType.DATETIME, DataType.TIMEDELTA, DataType.FLOAT)
+
+def _interval_endpoint_value_type(endpoints: Iterable[Any]) -> _DataTypeDef:
+    """Infer the endpoint type of an interval from its bound expressions, validating that they share a domain."""
+    endpoint_types = set()
+    for endpoint in endpoints:
+        if endpoint is None:
+            continue
+        result_type = endpoint.result_type if isinstance(endpoint, ExpressionBase) else endpoint
+        if result_type == DataType.UNDEFINED:
+            continue
+        if result_type not in _interval_endpoint_types:
+            raise errors.EvaluationError('data type mismatch (interval endpoints must be float, datetime or timedelta values)')
+        endpoint_types.add(result_type)
+    if len(endpoint_types) > 1:
+        raise errors.EvaluationError('data type mismatch (interval endpoints must be of the same type)')
+    return endpoint_types.pop() if endpoint_types else DataType.UNDEFINED
 
 ################################################################################
 # Literal Expressions
@@ -121,6 +147,120 @@ class FunctionExpression(LiteralExpressionBase):
     # there's no syntax for defining functions, but this is required by the parser when a method is referred to on a
     # literal value, e.g. `b"41".decode('utf-8')`
     result_type: _DataTypeDef = DataType.FUNCTION
+
+class IntervalExpression(LiteralExpressionBase):
+    """
+    Literal continuous interval expressions such as ``[1..10)`` or ``[d"2020-01-01"..]``. The value may span one or
+    more disjoint atoms when the expression is the reduced result of interval algebra (e.g. ``[1..10) - [3..5)``).
+
+    .. versionadded:: 5.1.0
+    """
+    result_type: _DataTypeDef = DataType.INTERVAL
+    def __init__(self, context: 'Context', value: Interval) -> None:
+        super(IntervalExpression, self).__init__(context, value)
+        self.result_type = DataType.from_value(value)
+
+class IntervalBoundsExpression(ExpressionBase):
+    """
+    An interval literal whose endpoint expressions have not (yet) been reduced to literal values. This allows
+    endpoints to reference symbols and built-ins such as ``[d"2020-01-01" .. $now]``. The expression reduces to an
+    :py:class:`IntervalExpression` as soon as both endpoints are reduced literals.
+
+    .. versionadded:: 5.1.0
+    """
+    __slots__ = ('left', 'right', 'left_closed', 'right_closed')
+    left: ExpressionBase | None
+    right: ExpressionBase | None
+    left_closed: bool
+    right_closed: bool
+    def __init__(
+            self,
+            context: 'Context',
+            *,
+            left: ExpressionBase | None = None,
+            right: ExpressionBase | None = None,
+            left_closed: bool = True,
+            right_closed: bool = False
+    ) -> None:
+        self.context = context
+        for endpoint, role in ((left, 'left'), (right, 'right')):
+            if endpoint is not None:
+                _assert_not_nullable(endpoint.result_type, role='{} interval endpoint'.format(role))
+        value_type = _interval_endpoint_value_type((left, right))
+        self.result_type = DataType.INTERVAL(value_type)
+        self.left = left
+        self.right = right
+        self.left_closed = bool(left_closed)
+        self.right_closed = bool(right_closed)
+
+    @classmethod
+    def build(  # type: ignore[override]
+            cls,
+            context: 'Context',
+            *,
+            left: ExpressionBase | None = None,
+            right: ExpressionBase | None = None,
+            left_closed: bool = True,
+            right_closed: bool = False
+    ) -> ExpressionBase:
+        left_built = left.build() if left is not None else None
+        right_built = right.build() if right is not None else None
+        assert left_built is None or isinstance(left_built, ExpressionBase)
+        assert right_built is None or isinstance(right_built, ExpressionBase)
+        reduced = cls(
+                context,
+                left=left_built,
+                right=right_built,
+                left_closed=left_closed,
+                right_closed=right_closed
+        ).reduce()
+        assert isinstance(reduced, ExpressionBase)
+        return reduced
+
+    def __repr__(self) -> str:
+        return "<{0} left={1!r} right={2!r} >".format(self.__class__.__name__, self.left, self.right)
+
+    def evaluate(self, thing: Any) -> Interval:
+        values: list[Any] = []
+        for endpoint, role in ((self.left, 'left'), (self.right, 'right')):
+            if endpoint is None:
+                values.append(None)
+                continue
+            value = endpoint.evaluate(thing)
+            if value is None:
+                # an omitted endpoint is genuinely unbounded; a present expression that yields null is a type error
+                raise errors.EvaluationError(
+                        'data type mismatch ({} interval endpoint is null; omit the endpoint for an unbounded side)'.format(role)
+                )
+            value_type = DataType.from_value(value)
+            if value_type not in _interval_endpoint_types:
+                raise errors.EvaluationError('data type mismatch (interval endpoints must be float, datetime or timedelta values)')
+            values.append(value)
+        left_value, right_value = values
+        if left_value is not None and right_value is not None and type(left_value) is not type(right_value):
+            raise errors.EvaluationError('data type mismatch (interval endpoints must be of the same type)')
+        try:
+            return Interval(
+                    left_value,
+                    right_value,
+                    left_closed=self.left_closed,
+                    right_closed=self.right_closed
+            )
+        except (TypeError, ValueError) as error:
+            raise errors.EvaluationError('data type mismatch ({})'.format(str(error))) from None
+
+    def reduce(self) -> ExpressionBase:
+        endpoints = tuple(endpoint for endpoint in (self.left, self.right) if endpoint is not None)
+        if not _is_reduced(*endpoints):
+            return self
+        return IntervalExpression(self.context, self.evaluate(None))
+
+    def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:
+        super(IntervalBoundsExpression, self).to_graphviz(digraph, *args, **kwargs)
+        for endpoint, label in ((self.left, 'left'), (self.right, 'right')):
+            if endpoint is not None:
+                endpoint.to_graphviz(digraph, *args, **kwargs)
+                digraph.edge(str(id(self)), str(id(endpoint)), label=label)
 
 class MappingExpression(LiteralExpressionBase):
     """Literal mapping expression representing a set of associations between keys and values."""

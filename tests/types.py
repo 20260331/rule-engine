@@ -42,7 +42,7 @@ import unittest
 import rule_engine.errors as errors
 import rule_engine.types as types
 
-__all__ = ('CoercionTests', 'DataTypeTests', 'MetaDataTypeTests', 'ObjectDataTypeTests', 'ValueIsTests')
+__all__ = ('CoercionTests', 'DataTypeTests', 'IntervalDataTypeTests', 'IntervalValueTests', 'MetaDataTypeTests', 'ObjectDataTypeTests', 'ValueIsTests')
 
 DataType = types.DataType
 
@@ -985,6 +985,180 @@ class ValueIsTests(unittest.TestCase):
     def test_value_is_real_number(self):
         for case in self.cases:
             self.assertEqual(types.is_real_number(case.value), case.real)
+
+class IntervalValueTests(unittest.TestCase):
+    def test_membership_closed_and_open_bounds(self):
+        cases = (
+                (types.Interval(1, 10, left_closed=True, right_closed=True), (1, 10), (0, 11)),
+                (types.Interval(1, 10, left_closed=False, right_closed=False), (5,), (1, 10)),
+                (types.Interval(1, 10, left_closed=True, right_closed=False), (1, 9), (10,)),
+                (types.Interval(1, 10, left_closed=False, right_closed=True), (10, 5), (1,)),
+        )
+        for interval, inside, outside in cases:
+            for value in inside:
+                self.assertIn(value, interval, msg='{0!r} should contain {1!r}'.format(interval, value))
+            for value in outside:
+                self.assertNotIn(value, interval, msg='{0!r} should not contain {1!r}'.format(interval, value))
+
+    def test_membership_unbounded(self):
+        self.assertIn(-10**9, types.Interval(None, 5, right_closed=True))
+        self.assertNotIn(6, types.Interval(None, 5, right_closed=True))
+        self.assertIn(10**9, types.Interval(5, None, left_closed=False))
+        self.assertNotIn(5, types.Interval(5, None, left_closed=False))
+        universe = types.Interval()
+        self.assertIn(0, universe)
+        self.assertIn(datetime.datetime(2000, 1, 1), universe)
+        self.assertNotIn(None, universe)
+        self.assertTrue(types.Interval(1, 1, left_closed=False).is_empty)
+
+    def test_membership_point_and_empty(self):
+        point = types.Interval(5, 5, left_closed=True, right_closed=True)
+        self.assertFalse(point.is_empty)
+        self.assertIn(5, point)
+        self.assertNotIn(4, point)
+        for kwargs in (
+                {'left_closed': False, 'right_closed': False},
+                {'left_closed': True, 'right_closed': False},
+                {'left_closed': False, 'right_closed': True},
+        ):
+            empty = types.Interval(5, 5, **kwargs)
+            self.assertTrue(empty.is_empty)
+            self.assertNotIn(5, empty)
+        self.assertEqual(types.Interval(10, 1), types.Interval(2, 2, left_closed=False))
+        self.assertTrue(bool(types.Interval(1, 2)))
+        self.assertFalse(bool(types.Interval(1, 1, left_closed=False)))
+
+    def test_membership_endpoint_types(self):
+        datetime_interval = types.Interval(datetime.datetime(2020, 1, 1), datetime.datetime(2021, 1, 1))
+        self.assertIn(datetime.datetime(2020, 6, 1), datetime_interval)
+        self.assertNotIn(datetime.datetime(2019, 1, 1), datetime_interval)
+        timedelta_interval = types.Interval(datetime.timedelta(days=1), datetime.timedelta(days=7))
+        self.assertIn(datetime.timedelta(days=3), timedelta_interval)
+        self.assertNotIn(datetime.timedelta(seconds=1), timedelta_interval)
+        with self.assertRaises(errors.EvaluationError):
+            'a string' in types.Interval(1, 2)
+        with self.assertRaises(errors.EvaluationError):
+            1 in datetime_interval
+        self.assertNotIn(None, types.Interval(1, 2))
+
+    def test_endpoint_coercion(self):
+        interval = types.Interval(1, 10)
+        self.assertIsInstance(interval.atoms[0].left, decimal.Decimal)
+        interval = types.Interval(datetime.date(2020, 1, 1), datetime.date(2021, 1, 1))
+        self.assertIsInstance(interval.atoms[0].left, datetime.datetime)
+        with self.assertRaises(TypeError):
+            types.Interval('a', 'b')
+        with self.assertRaises(TypeError):
+            types.Interval(True, False)
+        with self.assertRaises(ValueError):
+            types.Interval(0, decimal.Decimal('nan'))
+
+    def test_equality(self):
+        self.assertEqual(types.Interval(1, 10, right_closed=False), types.Interval(1, 10, right_closed=False))
+        self.assertNotEqual(types.Interval(1, 10, right_closed=True), types.Interval(1, 10, right_closed=False))
+        self.assertNotEqual(types.Interval(1, 10), types.Interval(1, 9))
+        self.assertNotEqual(types.Interval(1, 2), 1)
+        self.assertEqual(len({types.Interval(1, 2), types.Interval(1, 2), types.Interval(2, 3)}), 2)
+        # multi-piece intervals compare by their normalized atoms
+        self.assertEqual(
+                types.Interval(0, 10, right_closed=True) - types.Interval(3, 4, right_closed=True),
+                types.Interval(0, 3, right_closed=False) | types.Interval(4, 10, left_closed=False, right_closed=True)
+        )
+
+    def test_intersection(self):
+        self.assertEqual(types.Interval(0, 10, right_closed=True) & types.Interval(5, 15, right_closed=True),
+                types.Interval(5, 10, left_closed=True, right_closed=True))
+        self.assertEqual(
+                types.Interval(0, 5, right_closed=False) & types.Interval(5, 10, left_closed=True, right_closed=True),
+                types.Interval(1, 1, left_closed=False)
+        )
+        # the shared point is included only when both intervals include it
+        point_intersection = types.Interval(0, 5, right_closed=True) & types.Interval(5, 10, left_closed=True, right_closed=True)
+        self.assertIn(5, point_intersection)
+        self.assertIn(5, types.Interval(None, None) & types.Interval(5, 5, left_closed=True, right_closed=True))
+
+    def test_union(self):
+        self.assertEqual(
+                types.Interval(0, 10, right_closed=False) | types.Interval(9, 20, right_closed=True),
+                types.Interval(0, 20, left_closed=True, right_closed=True)
+        )
+        # adjacent intervals merge when the meeting point belongs to either side
+        self.assertEqual(len(types.Interval(1, 2, right_closed=False) | types.Interval(2, 3, left_closed=True, right_closed=True)), 1)
+        self.assertEqual(len(types.Interval(1, 2, right_closed=True) | types.Interval(2, 3, left_closed=False, right_closed=True)), 1)
+        self.assertEqual(len(types.Interval(1, 2, right_closed=False) | types.Interval(2, 3, left_closed=False, right_closed=True)), 2)
+        # the empty interval is the union identity
+        empty = types.Interval(1, 1, left_closed=False)
+        self.assertEqual(empty | types.Interval(1, 2), types.Interval(1, 2))
+        self.assertEqual(types.Interval(1, 2) | empty, types.Interval(1, 2))
+
+    def test_difference(self):
+        difference = types.Interval(1, 10, right_closed=False) - types.Interval(3, 5, right_closed=True)
+        self.assertEqual(len(difference), 2)
+        self.assertIn(2.9, difference)
+        self.assertNotIn(3, difference)
+        self.assertNotIn(5, difference)
+        self.assertIn(5.1, difference)
+        # removing a sub-interval that leaves the boundary point keeps it
+        difference = types.Interval(0, 10, right_closed=True) - types.Interval(3, 5, left_closed=False, right_closed=False)
+        self.assertIn(3, difference)
+        self.assertIn(5, difference)
+        self.assertEqual(types.Interval(1, 2) - types.Interval(3, 4), types.Interval(1, 2))
+        self.assertTrue((types.Interval(1, 2) - types.Interval(0, 10, right_closed=True)).is_empty)
+
+    def test_symmetric_difference(self):
+        left = types.Interval(0, 10, right_closed=True)
+        right = types.Interval(5, 15, right_closed=True)
+        self.assertEqual(left ^ right, (left | right) - (left & right))
+        self.assertTrue((left ^ left).is_empty)
+
+    def test_unbounded_algebra(self):
+        below_five = types.Interval(None, 5, right_closed=True)
+        above_three = types.Interval(3, None, left_closed=False)
+        overlap = below_five & above_three
+        self.assertIn(4, overlap)
+        self.assertNotIn(3, overlap)
+        self.assertIn(5, overlap)
+        self.assertNotIn(6, overlap)
+        self.assertEqual(below_five | above_three, types.Interval())
+        self.assertEqual(below_five - above_three, types.Interval(None, 3, right_closed=True))
+        with self.assertRaises(errors.EvaluationError):
+            types.Interval(1, 2) | types.Interval(datetime.datetime(2020, 1, 1), datetime.datetime(2021, 1, 1))
+        with self.assertRaises(errors.EvaluationError):
+            types.Interval(1, 2) & types.Interval(datetime.timedelta(days=1), datetime.timedelta(days=2))
+
+class IntervalDataTypeTests(unittest.TestCase):
+    def test_data_type_equality_interval(self):
+        dt1 = DataType.INTERVAL(DataType.FLOAT)
+        self.assertIs(dt1.value_type, DataType.FLOAT)
+        self.assertEqual(dt1, DataType.INTERVAL(DataType.FLOAT))
+        self.assertNotEqual(dt1, DataType.INTERVAL)
+        self.assertNotEqual(dt1, DataType.INTERVAL(DataType.DATETIME))
+        self.assertNotEqual(dt1, DataType.SET(DataType.FLOAT))
+
+    def test_data_type_invalid_interval_members(self):
+        for member in (
+                DataType.STRING, DataType.BOOLEAN, DataType.BYTES, DataType.NULL,
+                DataType.SET(DataType.FLOAT), DataType.ARRAY(DataType.FLOAT),
+                DataType.MAPPING(DataType.STRING), DataType.INTERVAL(DataType.FLOAT),
+                DataType.NULLABLE(DataType.FLOAT), DataType.FUNCTION, DataType.OBJECT
+        ):
+            with self.assertRaises(errors.EngineError):
+                DataType.INTERVAL(member)
+
+    def test_data_type_from_value_and_type(self):
+        numeric = types.Interval(1, 2)
+        self.assertEqual(DataType.from_value(numeric), DataType.INTERVAL(DataType.FLOAT))
+        datetime_interval = types.Interval(datetime.datetime(2020, 1, 1), datetime.datetime(2021, 1, 1))
+        self.assertEqual(DataType.from_value(datetime_interval), DataType.INTERVAL(DataType.DATETIME))
+        self.assertEqual(DataType.from_value(types.Interval(1, 1, left_closed=False)), DataType.INTERVAL)
+        self.assertEqual(DataType.from_type(types.Interval), DataType.INTERVAL)
+        self.assertTrue(DataType.is_type(DataType.from_value(numeric), DataType.INTERVAL))
+
+    def test_data_type_compatibility(self):
+        self.assertTrue(DataType.is_compatible(DataType.INTERVAL, DataType.INTERVAL(DataType.FLOAT)))
+        self.assertTrue(DataType.is_compatible(DataType.INTERVAL(DataType.FLOAT), DataType.INTERVAL(DataType.FLOAT)))
+        self.assertFalse(DataType.is_compatible(DataType.INTERVAL(DataType.FLOAT), DataType.INTERVAL(DataType.DATETIME)))
+        self.assertFalse(DataType.is_compatible(DataType.INTERVAL(DataType.FLOAT), DataType.SET(DataType.FLOAT)))
 
 if __name__ == '__main__':
     unittest.main()

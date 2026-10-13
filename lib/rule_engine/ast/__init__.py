@@ -54,6 +54,8 @@ from .literal import (
         DatetimeExpression,
         FloatExpression,
         FunctionExpression,
+        IntervalBoundsExpression,
+        IntervalExpression,
         MappingExpression,
         NullExpression,
         SetExpression,
