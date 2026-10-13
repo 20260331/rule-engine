@@ -7,6 +7,18 @@ this list is curated by the development team for note worthy changes.
 Version 5.x.x
 -------------
 
+Version 5.1.0
+^^^^^^^^^^^^^
+
+* Added optional per-evaluation resource limits to :py:class:`~rule_engine.engine.Context`: *max_ast_steps* bounds the
+  number of AST steps an evaluation may execute and *max_container_items* bounds the number of items placed into newly
+  created containers (array, set and mapping literals, comprehension output, slices, set operations and
+  container-returning function calls). Evaluation stops before the next unit of work and does not pull another input
+  from a comprehension's iterable once a limit is reached, raising :py:exc:`~rule_engine.errors.ASTStepLimitError` or
+  :py:exc:`~rule_engine.errors.ContainerItemLimitError` (both subclasses of
+  :py:exc:`~rule_engine.errors.EvaluationLimitError`). The counters reset for each
+  :py:meth:`~rule_engine.engine.Rule.evaluate` call so a failed evaluation leaves no residue for the next one.
+
 Version 5.0.0
 ^^^^^^^^^^^^^
 

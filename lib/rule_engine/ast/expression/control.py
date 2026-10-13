@@ -101,15 +101,37 @@ class ComprehensionExpression(ExpressionBase):
     def __repr__(self) -> str:
         return "<{0} iterable={1!r} result={2!r} condition={3!r} >".format(self.__class__.__name__, self.iterable, self.result, self.condition)
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         output_array: 'collections.deque[Any]' = collections.deque()
         input_iterable = self.iterable.evaluate(thing)
         if not DataType.from_value(input_iterable).is_iterable:
             raise errors.EvaluationError('data type mismatch (comprehension requires an iterable)')
-        for value in input_iterable:
+        input_iterator = iter(input_iterable)
+        while True:
+            # standard container iterators (those backing ARRAY and SET values) report the exact remaining length;
+            # when it is zero the iterable is exhausted so finish without spending another step or enforcing a limit
+            # that would only have protected an element which does not exist
+            remaining = operator.length_hint(input_iterator, -1)
+            if remaining == 0:
+                break
+            if remaining > 0:
+                # more elements are known to exist, so enforce both limits before fetching the next input
+                self.context._before_next_input()
+            else:
+                # an exotic iterator without an exact length hint: account for the iteration first and defer
+                # enforcement until after natural exhaustion has been ruled out
+                self.context._count_ast_step(enforce=False)
+            try:
+                value = next(input_iterator)
+            except StopIteration:
+                break
+            if remaining < 0:
+                self.context._enforce_evaluation_limits()
             assignment = Assignment(self.variable, value=value)
             with self.context.assignments(assignment):
                 if self.condition is None or self.condition.evaluate(thing):
+                    # reserve the output slot before the result is evaluated
+                    self.context._charge_container_items(1)
                     output_array.append(self.result.evaluate(thing))
         return tuple(output_array)
 
@@ -162,7 +184,7 @@ class TernaryExpression(ExpressionBase):
         assert isinstance(reduced, ExpressionBase)
         return reduced
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         case = (self.case_true if self.condition.evaluate(thing) else self.case_false)
         return case.evaluate(thing)
 
@@ -220,7 +242,7 @@ class UnaryExpression(ExpressionBase):
     def __repr__(self) -> str:
         return "<{} type={!r} >".format(self.__class__.__name__, self.type)
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         return self._evaluator(thing)
 
     def __op(self, op: Callable[[Any], Any], thing: Any) -> Any:
@@ -241,12 +263,12 @@ class UnaryExpression(ExpressionBase):
         if not _is_reduced(self.right):
             return self
         if type_ == 'not':
-            return BooleanExpression(self.context, self.evaluate(None))
+            return BooleanExpression(self.context, self._evaluate(None))
         elif type_ == 'uminus':
             if isinstance(self.right, FloatExpression):
-                return FloatExpression(self.context, self.evaluate(None))
+                return FloatExpression(self.context, self._evaluate(None))
             elif isinstance(self.right, TimedeltaExpression):
-                return TimedeltaExpression(self.context, self.evaluate(None))
+                return TimedeltaExpression(self.context, self._evaluate(None))
             raise errors.EvaluationError('data type mismatch (not a float or timedelta expression)')
         raise errors.EngineError('unsupported unary expression type')
 

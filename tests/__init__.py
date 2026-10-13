@@ -33,6 +33,7 @@
 from .ast import *
 from .builtins import *
 from .engine import *
+from .evaluation_limits import *
 from .errors import *
 from .issues import *
 from .parser import *

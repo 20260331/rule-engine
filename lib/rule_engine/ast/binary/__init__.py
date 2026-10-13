@@ -84,7 +84,7 @@ class CoalesceExpression(ExpressionBase):
         assert isinstance(reduced, ExpressionBase)
         return reduced
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         left_value = self.left.evaluate(thing)
         if left_value is None:
             return self.right.evaluate(thing)
@@ -93,7 +93,7 @@ class CoalesceExpression(ExpressionBase):
     def reduce(self) -> ExpressionBase:
         if not _is_reduced(self.left, self.right):
             return self
-        return LiteralExpressionBase.from_value(self.context, self.evaluate(None))
+        return LiteralExpressionBase.from_value(self.context, self._evaluate(None))
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:
         digraph.node(str(id(self)), self.__class__.__name__)

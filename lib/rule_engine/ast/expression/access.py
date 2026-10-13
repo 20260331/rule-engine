@@ -85,7 +85,7 @@ class ContainsExpression(ExpressionBase):
     def __repr__(self) -> str:
         return "<{0} container={1!r} member={2!r} >".format(self.__class__.__name__, self.container, self.member)
 
-    def evaluate(self, thing: Any) -> bool:
+    def _evaluate(self, thing: Any) -> bool:
         container_value = self.container.evaluate(thing)
         container_value_type = DataType.from_value(container_value)
         member_value = self.member.evaluate(thing)
@@ -97,7 +97,7 @@ class ContainsExpression(ExpressionBase):
     def reduce(self) -> ExpressionBase:
         if not _is_reduced(self.container, self.member):
             return self
-        return BooleanExpression(self.context, self.evaluate(None))
+        return BooleanExpression(self.context, self._evaluate(None))
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:
         super(ContainsExpression, self).to_graphviz(digraph, *args, **kwargs)
@@ -169,7 +169,7 @@ class GetAttributeExpression(ExpressionBase):
     def __repr__(self) -> str:
         return "<{0} name={1!r} >".format(self.__class__.__name__, self.name)
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         resolved_obj = self.object.evaluate(thing)
         if resolved_obj is None and self.safe:
             return resolved_obj
@@ -223,7 +223,7 @@ class GetAttributeExpression(ExpressionBase):
     def reduce(self) -> ExpressionBase:
         if not _is_reduced(self.object):
             return self
-        literal = LiteralExpressionBase.from_value(self.context, self.evaluate(None))
+        literal = LiteralExpressionBase.from_value(self.context, self._evaluate(None))
         if literal.result_type == DataType.FUNCTION and DataType.is_compatible(self.result_type, DataType.FUNCTION):
             literal.result_type = self.result_type
         return literal
@@ -296,7 +296,7 @@ class GetItemExpression(ExpressionBase):
     def __repr__(self) -> str:
         return "<{0} container={1!r} item={2!r} >".format(self.__class__.__name__, self.container, self.item)
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         resolved_obj = self.container.evaluate(thing)
         if resolved_obj is None:
             if self.safe:
@@ -320,7 +320,7 @@ class GetItemExpression(ExpressionBase):
             if self.safe and not DataType.is_compatible(self.item.result_type, self.container.result_type.key_type):
                 return NullExpression(self.context)
         if _is_reduced(self.container, self.item):
-            return LiteralExpressionBase.from_value(self.context, self.evaluate(None))
+            return LiteralExpressionBase.from_value(self.context, self._evaluate(None))
         return self
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:
@@ -401,7 +401,7 @@ class GetSliceExpression(ExpressionBase):
     def __repr__(self) -> str:
         return "<{0} container={1!r} start={2!r} stop={3!r} >".format(self.__class__.__name__, self.container, self.start, self.stop)
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         resolved_obj = self.container.evaluate(thing)
         if resolved_obj is None:
             if self.safe:
@@ -417,12 +417,16 @@ class GetSliceExpression(ExpressionBase):
             _assert_is_integer_number(resolved_stop)
             resolved_stop = int(resolved_stop)
         value = operator.getitem(resolved_obj, slice(resolved_start, resolved_stop))
-        return coerce_value(value, verify_type=False)
+        value = coerce_value(value, verify_type=False)
+        # slicing an ARRAY (backed by a tuple) allocates a new container with one item per member
+        if isinstance(value, tuple):
+            self.context._charge_container_items(len(value))
+        return value
 
     def reduce(self) -> ExpressionBase:
         if not _is_reduced(self.container, self.start, self.stop):
             return self
-        return LiteralExpressionBase.from_value(self.context, self.evaluate(None))
+        return LiteralExpressionBase.from_value(self.context, self._evaluate(None))
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:
         super(GetSliceExpression, self).to_graphviz(digraph, *args, **kwargs)

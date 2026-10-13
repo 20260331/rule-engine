@@ -82,6 +82,54 @@ class EvaluationError(EngineError):
     nodes are being evaluated during the reduction phase.
     """
 
+class EvaluationLimitError(EvaluationError):
+    """
+    An error raised when an evaluation exceeds one of the optional resource limits configured on the
+    :py:class:`~rule_engine.engine.Context`. Evaluation stops before the next unit of work is performed, so the
+    counters behind the limits start at zero for each :py:meth:`~rule_engine.engine.Rule.evaluate` call and a failed
+    evaluation leaves no residue that affects subsequent evaluations.
+
+    .. versionadded:: 5.1.0
+    """
+    limit_name: str = 'evaluation limit'
+    """A human readable name of the limit that was exceeded."""
+    def __init__(self, limit: int, usage: int) -> None:
+        """
+        :param int limit: The configured limit that was reached or exceeded.
+        :param int usage: The measured usage at the time the limit was enforced. This is greater than *limit* when the
+                current unit of work crossed it, or equal to *limit* when evaluation stopped before pulling the next
+                unit of work.
+        """
+        self.limit = limit
+        """The configured limit that was reached or exceeded."""
+        self.usage = usage
+        """The measured usage at the time the limit was enforced."""
+        message = "{0} reached or exceeded (usage: {1}, limit: {2})".format(self.limit_name, usage, limit)
+        super(EvaluationLimitError, self).__init__(message)
+        # EngineError does not forward its message to the underlying Exception args, so do it explicitly to keep
+        # str(exception) rendering the descriptive message
+        self.args = (message,)
+
+    def __repr__(self) -> str:
+        return "<{} limit={!r} usage={!r} >".format(self.__class__.__name__, self.limit, self.usage)
+
+class ASTStepLimitError(EvaluationLimitError):
+    """
+    An error raised when an evaluation executes more AST steps than the configured *max_ast_steps* limit.
+
+    .. versionadded:: 5.1.0
+    """
+    limit_name = 'AST step limit'
+
+class ContainerItemLimitError(EvaluationLimitError):
+    """
+    An error raised when an evaluation creates more items in new containers (arrays, sets and mappings) than the
+    configured *max_container_items* limit.
+
+    .. versionadded:: 5.1.0
+    """
+    limit_name = 'container item limit'
+
 class SyntaxError(EngineError):
     """A base error for syntax related issues."""
 

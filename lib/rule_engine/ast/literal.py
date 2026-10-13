@@ -48,9 +48,12 @@ if TYPE_CHECKING:
 ################################################################################
 class _CollectionMixin(object):
     # these attributes are provided by the LiteralExpressionBase half of the subclasses
+    context: 'Context'
     result_type: _DataTypeDef
     value: Any
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
+        # account for every item in the new container before its members are evaluated
+        self.context._charge_container_items(len(self.value))
         return self.result_type.python_type(member.evaluate(thing) for member in self.value)
 
     @property
@@ -140,8 +143,10 @@ class MappingExpression(LiteralExpressionBase):
         value = collections.OrderedDict((k.build(), v.build()) for k, v in value.items())
         return cls(context, value)
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         mapping: 'collections.OrderedDict[Any, Any]' = collections.OrderedDict()
+        # account for every entry in the new mapping before its keys and values are evaluated
+        self.context._charge_container_items(len(self.value))
         for key, value in self.value:
             key = key.evaluate(thing)
             key_type = DataType.from_value(key)

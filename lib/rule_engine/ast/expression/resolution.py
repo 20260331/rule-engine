@@ -30,6 +30,7 @@
 #  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+import collections.abc
 from typing import TYPE_CHECKING, Any, Iterable
 
 from ... import errors
@@ -66,7 +67,7 @@ class SymbolExpression(ExpressionBase):
     def __repr__(self) -> str:
         return "<{0} name={1!r} >".format(self.__class__.__name__, self.name)
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         try:
             value = self.context.resolve(thing, self.name, scope=self.scope)
         except errors.SymbolResolutionError:
@@ -151,9 +152,9 @@ class FunctionCallExpression(ExpressionBase):
     def reduce(self) -> ExpressionBase:
         if not _is_reduced(self.function, *self.arguments):
             return self
-        return LiteralExpressionBase.from_value(self.context, self.evaluate(None))
+        return LiteralExpressionBase.from_value(self.context, self._evaluate(None))
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         function = self.function.evaluate(thing)
         if not callable(function):
             raise errors.EvaluationError('data type mismatch (not a callable value)')
@@ -176,6 +177,9 @@ class FunctionCallExpression(ExpressionBase):
         result = self._new_value(result)
         if not DataType.is_compatible(DataType.from_value(result), self.result_type):
             raise errors.FunctionCallError('function call failed (data type mismatch on returned value)', function_name=function_name)
+        # a call which returns a container has allocated a new one whose items count against the limit
+        if isinstance(result, (tuple, set, frozenset, collections.abc.Mapping)):
+            self.context._charge_container_items(len(result))
         return result
 
     def _validate_function(self, function_type: _DataTypeDef, arguments: 'tuple[Any, ...]') -> None:

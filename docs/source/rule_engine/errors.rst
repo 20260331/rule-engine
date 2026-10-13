@@ -19,7 +19,17 @@ Exceptions
    :show-inheritance:
    :special-members: __init__
 
+.. autoexception:: ASTStepLimitError
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
 .. autoexception:: AttributeResolutionError
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
+.. autoexception:: ContainerItemLimitError
    :members:
    :show-inheritance:
    :special-members: __init__
@@ -50,6 +60,11 @@ Exceptions
    :special-members: __init__
 
 .. autoexception:: EvaluationError
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
+.. autoexception:: EvaluationLimitError
    :members:
    :show-inheritance:
    :special-members: __init__
@@ -119,6 +134,9 @@ The class hierarchy for Rule Engine exceptions is:
          +-- AttributeResolutionError
               +-- ObjectAttributeError
          +-- AttributeTypeError
+         +-- EvaluationLimitError
+              +-- ASTStepLimitError
+              +-- ContainerItemLimitError
          +-- FunctionCallError
          +-- LookupError
          +-- SymbolResolutionError

@@ -96,13 +96,13 @@ class BinaryExpressionBase(ExpressionBase):
     def __repr__(self) -> str:
         return "<{} type={!r} >".format(self.__class__.__name__, self.type)
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         return self._evaluator(thing)
 
     def reduce(self) -> ExpressionBase:
         if not _is_reduced(self.left, self.right):
             return self
-        return LiteralExpressionBase.from_value(self.context, self.evaluate(None))
+        return LiteralExpressionBase.from_value(self.context, self._evaluate(None))
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:
         digraph.node(str(id(self)), "{}\ntype={!r}".format(self.__class__.__name__, self.type))

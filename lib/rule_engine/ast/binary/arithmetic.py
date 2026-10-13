@@ -196,7 +196,11 @@ class BitwiseExpression(BinaryExpressionBase):
         right = self.right.evaluate(thing)
         if not DataType.is_compatible(DataType.from_value(right), DataType.SET):
             raise errors.EvaluationError('data type mismatch')
-        return op(left, right)
+        result = op(left, right)
+        # bitwise set operations allocate a new SET with one item per resulting member
+        if isinstance(result, (set, frozenset)):
+            self.context._charge_container_items(len(result))
+        return result
 
     _op_bwand = functools.partialmethod(_op_bitwise, operator.and_)
     _op_bwor  = functools.partialmethod(_op_bitwise, operator.or_)

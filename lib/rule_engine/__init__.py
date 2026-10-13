@@ -40,20 +40,26 @@ from .engine import type_resolver_from_sqlalchemy
 from .engine import Context
 from .engine import Rule
 
+from .errors import ASTStepLimitError
 from .errors import AttributeResolutionError
+from .errors import ContainerItemLimitError
 from .errors import EngineError
 from .errors import EvaluationError
+from .errors import EvaluationLimitError
 from .errors import RuleSyntaxError
 from .errors import SymbolResolutionError
 
 from .types import DataType
 
 __all__ = (
+    'ASTStepLimitError',
     'AttributeResolutionError',
+    'ContainerItemLimitError',
     'Context',
     'DataType',
     'EngineError',
     'EvaluationError',
+    'EvaluationLimitError',
     'Rule',
     'RuleSyntaxError',
     'SymbolResolutionError',

@@ -245,6 +245,24 @@ class ExpressionBase(ASTNodeBase):
     def __repr__(self) -> str:
         return "<{0} >".format(self.__class__.__name__)
 
+    def evaluate(self, thing: Any) -> Any:
+        """
+        Evaluate this AST node and all applicable children nodes. Each call is metered as one AST step against the
+        context's optional evaluation limits; subclasses implement the actual work in :py:meth:`._evaluate`.
+
+        :param thing: The object to use for symbol resolution.
+        :return: The result of the evaluation as a native Python type.
+        """
+        self.context._count_ast_step()
+        return self._evaluate(thing)
+
+    def _evaluate(self, thing: Any) -> Any:
+        """
+        The subclass provided implementation which performs the actual evaluation work. Unlike :py:meth:`.evaluate`,
+        this is not metered and is also used for parse-time reduction.
+        """
+        raise NotImplementedError()
+
     def _new_value(self, *args: Any, **kwargs: Any) -> Any:
         # perform a context aware load of value
         value = coerce_value(*args, **kwargs)
@@ -298,7 +316,7 @@ class LiteralExpressionBase(ExpressionBase):
             value = coerce_value(value)
         return subclass(context, value)
 
-    def evaluate(self, thing: Any) -> Any:
+    def _evaluate(self, thing: Any) -> Any:
         return self.value
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:

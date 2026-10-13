@@ -59,6 +59,15 @@ def _tls_getter(thread_local: threading.local, key: str, _builtins: Any) -> Any:
 def _default_type_resolver(_: str) -> _DataTypeDef:
     return types.DataType.UNDEFINED
 
+def _validate_evaluation_limit(name: str, limit: int | None) -> int | None:
+    if limit is None:
+        return None
+    if isinstance(limit, bool) or not isinstance(limit, int):
+        raise TypeError(name + ' must be an integer or None')
+    if limit < 1:
+        raise ValueError(name + ' must be a positive integer')
+    return limit
+
 def resolve_attribute(thing: Any, name: str) -> Any:
     """
     A replacement resolver function for looking up symbols as members of *thing*. This is effectively the same as
@@ -206,16 +215,25 @@ class _ThreadLocalStorage(object):
     if a context is used by one or more rules that are being evaluated simultaneously in multiple threads, that the
     states are kept isolated.
     """
-    __slots__ = ('assignment_scopes', 'regex_groups')
+    __slots__ = ('assignment_scopes', 'regex_groups', 'metering', 'ast_steps', 'container_items')
     assignment_scopes: 'collections.deque[dict[str, ast.Assignment]]'
     regex_groups: tuple[str, ...] | None
+    metering: bool
+    ast_steps: int
+    container_items: int
     def __init__(self) -> None:
         self.assignment_scopes = collections.deque()
         self.regex_groups = None
+        self.metering = False
+        self.ast_steps = 0
+        self.container_items = 0
 
     def reset(self) -> None:
         self.assignment_scopes.clear()
         self.regex_groups = None
+        self.metering = False
+        self.ast_steps = 0
+        self.container_items = 0
 
 class Context(object):
     """
@@ -231,7 +249,9 @@ class Context(object):
                     default_timezone: str | datetime.tzinfo = 'local',
                     default_value: Any = errors.UNDEFINED,
                     decimal_context: decimal.Context | None = None,
-                    mapping_attribute_lookup: bool = True
+                    mapping_attribute_lookup: bool = True,
+                    max_ast_steps: int | None = None,
+                    max_container_items: int | None = None
     ) -> None:
         """
         :param int regex_flags: The flags to provide to functions in the :py:mod:`re` module when calling either the
@@ -254,6 +274,16 @@ class Context(object):
                 back to ``mapping['key']`` and emits a :py:exc:`~rule_engine.errors.MappingAttributeLookupDeprecation`
                 once per context. When ``False``, attribute access on a :py:attr:`.MAPPING` raises a parse-time error.
                 This fallback is scheduled for removal in v6.0.
+        :param int max_ast_steps: An optional limit on the number of AST steps (expression node evaluations, including
+                one step per element visited by a comprehension) that a single call to
+                :py:meth:`~rule_engine.engine.Rule.evaluate` may execute. When the limit is reached, evaluation stops
+                before the next step and raises :py:exc:`~rule_engine.errors.ASTStepLimitError`. The default of
+                ``None`` disables the limit.
+        :param int max_container_items: An optional limit on the number of items placed into containers that a single
+                call to :py:meth:`~rule_engine.engine.Rule.evaluate` creates (array, set and mapping literals,
+                comprehension output and other container-producing expressions such as slices or builtin function
+                calls). When the limit is reached, evaluation stops before the next item of work and raises
+                :py:exc:`~rule_engine.errors.ContainerItemLimitError`. The default of ``None`` disables the limit.
 
         .. versionchanged:: 2.0.0
                 Added the *default_value* parameter.
@@ -267,7 +297,12 @@ class Context(object):
 
         .. versionchanged:: 5.0.0
                 Added the *mapping_attribute_lookup* parameter.
+
+        .. versionchanged:: 5.1.0
+                Added the *max_ast_steps* and *max_container_items* parameters.
         """
+        max_ast_steps = _validate_evaluation_limit('max_ast_steps', max_ast_steps)
+        max_container_items = _validate_evaluation_limit('max_container_items', max_container_items)
         self.regex_flags = regex_flags
         """The *regex_flags* parameter from :py:meth:`~__init__`"""
         self.symbols: set[str] = set()
@@ -307,6 +342,10 @@ class Context(object):
         """The *mapping_attribute_lookup* parameter from :py:meth:`~__init__`."""
         self._mapping_fallback_lock = threading.Lock()
         self._mapping_fallback_warned = False
+        self.max_ast_steps = max_ast_steps
+        """The *max_ast_steps* parameter from :py:meth:`~__init__`."""
+        self.max_container_items = max_container_items
+        """The *max_container_items* parameter from :py:meth:`~__init__`."""
 
     def __getstate__(self) -> dict[str, Any]:
         return {
@@ -317,6 +356,8 @@ class Context(object):
                 'decimal_context': self.decimal_context,
                 'mapping_attribute_lookup': self.mapping_attribute_lookup,
                 '_mapping_fallback_warned': self._mapping_fallback_warned,
+                'max_ast_steps': self.max_ast_steps,
+                'max_container_items': self.max_container_items,
                 '_Context__type_resolver': self.__type_resolver,
                 '_Context__resolver': self.__resolver,
         }
@@ -329,6 +370,8 @@ class Context(object):
         self.decimal_context = state['decimal_context']
         self.mapping_attribute_lookup = state['mapping_attribute_lookup']
         self._mapping_fallback_warned = state['_mapping_fallback_warned']
+        self.max_ast_steps = state['max_ast_steps']
+        self.max_container_items = state['max_container_items']
         self.__type_resolver = state['_Context__type_resolver']
         self.__resolver = state['_Context__resolver']
         # recreate transient objects that can not be pickled
@@ -362,6 +405,70 @@ class Context(object):
         storage = self._thread_local.storage
         assert isinstance(storage, _ThreadLocalStorage)
         return storage
+
+    def _begin_evaluation(self) -> None:
+        """Reset the per-evaluation thread-local state and arm the evaluation limit counters."""
+        tls = self._tls
+        tls.reset()
+        tls.metering = True
+
+    def _end_evaluation(self) -> None:
+        """Disarm the evaluation limit counters so failure residue can not affect later work in the same thread."""
+        self._tls.metering = False
+
+    def _count_ast_step(self, amount: int = 1, enforce: bool = True) -> None:
+        """
+        Account for *amount* executed AST steps and raise :py:exc:`~rule_engine.errors.ASTStepLimitError` when the
+        configured *max_ast_steps* limit is exceeded. This is a no-op unless metering is armed. When *enforce* is
+        ``False`` the counter is only updated and the caller is expected to invoke
+        :py:meth:`._enforce_evaluation_limits` after probing for iterator exhaustion.
+        """
+        tls = self._tls
+        if not tls.metering:
+            return
+        tls.ast_steps += amount
+        if enforce and self.max_ast_steps is not None and tls.ast_steps > self.max_ast_steps:
+            raise errors.ASTStepLimitError(self.max_ast_steps, tls.ast_steps)
+
+    def _charge_container_items(self, amount: int) -> None:
+        """
+        Account for *amount* items in a newly created container and raise
+        :py:exc:`~rule_engine.errors.ContainerItemLimitError` when the configured *max_container_items* limit is
+        exceeded. This is a no-op unless metering is armed.
+        """
+        tls = self._tls
+        if not tls.metering or amount == 0:
+            return
+        tls.container_items += amount
+        if self.max_container_items is not None and tls.container_items > self.max_container_items:
+            raise errors.ContainerItemLimitError(self.max_container_items, tls.container_items)
+
+    def _enforce_evaluation_limits(self) -> None:
+        """Raise the appropriate exception if either evaluation limit has been reached, without mutating counters."""
+        tls = self._tls
+        if not tls.metering:
+            return
+        if self.max_ast_steps is not None and tls.ast_steps > self.max_ast_steps:
+            raise errors.ASTStepLimitError(self.max_ast_steps, tls.ast_steps)
+        if self.max_container_items is not None and tls.container_items >= self.max_container_items:
+            raise errors.ContainerItemLimitError(self.max_container_items, tls.container_items)
+
+    def _before_next_input(self) -> None:
+        """
+        Boundary hook invoked before an engine-driven loop pulls its next input from an iterator with a known,
+        positive remaining length. The iteration is counted as one AST step and, once either limit has been reached,
+        the corresponding exception is raised before the input is fetched (so no extra input is prefetched past a
+        limit). The caller is responsible for checking natural exhaustion of the iterable before this hook so that an
+        input which exactly fills a budget completes normally.
+        """
+        tls = self._tls
+        if not tls.metering:
+            return
+        tls.ast_steps += 1
+        if self.max_ast_steps is not None and tls.ast_steps > self.max_ast_steps:
+            raise errors.ASTStepLimitError(self.max_ast_steps, tls.ast_steps)
+        if self.max_container_items is not None and tls.container_items >= self.max_container_items:
+            raise errors.ContainerItemLimitError(self.max_container_items, tls.container_items)
 
     def resolve(self, thing: Any, name: str, scope: str | None = None) -> Any:
         """

@@ -114,9 +114,12 @@ class Rule(object):
         :return: The value the rule evaluates to. Unlike the :py:meth:`.matches` method, this is not necessarily a
                 boolean.
         """
-        self.context._tls.reset()
-        with decimal.localcontext(self.context.decimal_context):
-            return self.statement.evaluate(thing)
+        self.context._begin_evaluation()
+        try:
+            with decimal.localcontext(self.context.decimal_context):
+                return self.statement.evaluate(thing)
+        finally:
+            self.context._end_evaluation()
 
     def matches(self, thing: Any) -> bool:
         """
