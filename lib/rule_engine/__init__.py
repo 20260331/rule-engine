@@ -37,9 +37,13 @@ from .engine import resolve_item
 from .engine import type_resolver_from_dataclass
 from .engine import type_resolver_from_dict
 from .engine import type_resolver_from_sqlalchemy
+from .engine import AccessPath
+from .engine import AccessPolicy
 from .engine import Context
 from .engine import Rule
+from .engine import WhitelistAccessPolicy
 
+from .errors import AccessDeniedError
 from .errors import AttributeResolutionError
 from .errors import EngineError
 from .errors import EvaluationError
@@ -49,6 +53,9 @@ from .errors import SymbolResolutionError
 from .types import DataType
 
 __all__ = (
+    'AccessDeniedError',
+    'AccessPath',
+    'AccessPolicy',
     'AttributeResolutionError',
     'Context',
     'DataType',
@@ -57,6 +64,7 @@ __all__ = (
     'Rule',
     'RuleSyntaxError',
     'SymbolResolutionError',
+    'WhitelistAccessPolicy',
     'resolve_attribute',
     'resolve_item',
     'type_resolver_from_dataclass',

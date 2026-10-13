@@ -33,6 +33,7 @@
 from typing import TYPE_CHECKING, Any, Iterable
 
 from ... import errors
+from ...engine._access_policy import AccessPath, CallAccess
 from ...types import DataType
 from ...types import _CollectionDataTypeDef, _DataTypeDef, _FunctionDataTypeDef, _MappingDataTypeDef
 
@@ -67,6 +68,14 @@ class SymbolExpression(ExpressionBase):
         return "<{0} name={1!r} >".format(self.__class__.__name__, self.name)
 
     def evaluate(self, thing: Any) -> Any:
+        assignment = self.context.get_assignment(self.name) if self.scope is None else None
+        if assignment is not None:
+            # an aliased value (e.g. a comprehension variable) was already permitted when it was read or bound, so
+            # it keeps the path of what it refers to instead of starting a new root read
+            path = assignment.access_path
+        else:
+            path = AccessPath.root(self.name, self.scope)
+            self.context._access_guard(path)
         try:
             value = self.context.resolve(thing, self.name, scope=self.scope)
         except errors.SymbolResolutionError:
@@ -74,6 +83,7 @@ class SymbolExpression(ExpressionBase):
             if default_value is errors.UNDEFINED:
                 raise
             value = default_value
+        self.context._access_publish(path)
         value = self._new_value(value, verify_type=False)
 
         # if the expected result type is undefined, return the value
@@ -157,6 +167,7 @@ class FunctionCallExpression(ExpressionBase):
         function = self.function.evaluate(thing)
         if not callable(function):
             raise errors.EvaluationError('data type mismatch (not a callable value)')
+        function_path = self.context._access_current()
         arguments = tuple(argument.evaluate(thing) for argument in self.arguments)
         function_name: str | None = '<unknown>'
         if self.function.result_type != DataType.UNDEFINED:
@@ -166,6 +177,9 @@ class FunctionCallExpression(ExpressionBase):
             self._validate_function(function_type, arguments)
         elif hasattr(function, '__name__'):
             function_name = function.__name__ + '?'
+        # ask the policy immediately before invoking the callable; arguments have already been evaluated in order
+        call_path = AccessPath.extend(function_path, CallAccess())
+        self.context._access_guard(call_path)
         try:
             result = function(*arguments)
         except errors.FunctionCallError as error:
@@ -176,6 +190,7 @@ class FunctionCallExpression(ExpressionBase):
         result = self._new_value(result)
         if not DataType.is_compatible(DataType.from_value(result), self.result_type):
             raise errors.FunctionCallError('function call failed (data type mismatch on returned value)', function_name=function_name)
+        self.context._access_publish(call_path)
         return result
 
     def _validate_function(self, function_type: _DataTypeDef, arguments: 'tuple[Any, ...]') -> None:

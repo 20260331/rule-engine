@@ -115,7 +115,7 @@ class Rule(object):
                 boolean.
         """
         self.context._tls.reset()
-        with decimal.localcontext(self.context.decimal_context):
+        with decimal.localcontext(self.context.decimal_context), self.context._access_evaluation():
             return self.statement.evaluate(thing)
 
     def matches(self, thing: Any) -> bool:

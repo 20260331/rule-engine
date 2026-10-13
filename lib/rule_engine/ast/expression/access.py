@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any
 
 from ... import builtins as _builtins
 from ... import errors
+from ...engine._access_policy import AccessPath, AttributeAccess, ItemAccess, SliceAccess
 from ...suggestions import suggest_symbol
 from ...types import DataType, coerce_value
 from ...types import _DataTypeDef
@@ -92,7 +93,9 @@ class ContainsExpression(ExpressionBase):
         if container_value_type == DataType.BYTES or container_value_type == DataType.STRING:
             if DataType.from_value(member_value) != container_value_type:
                 raise errors.EvaluationError('data type mismatch')
-        return bool(member_value in container_value)
+        result = bool(member_value in container_value)
+        self.context._access_publish(None)
+        return result
 
     def reduce(self) -> ExpressionBase:
         if not _is_reduced(self.container, self.member):
@@ -172,11 +175,15 @@ class GetAttributeExpression(ExpressionBase):
     def evaluate(self, thing: Any) -> Any:
         resolved_obj = self.object.evaluate(thing)
         if resolved_obj is None and self.safe:
+            self.context._access_publish(None)
             return resolved_obj
         if resolved_obj is None and DataType.is_type(self.object.result_type, DataType.NULLABLE):
             raise errors.EvaluationError(
                     "attribute access on a null value (use ?. to safely navigate a NULLABLE expression)"
             )
+
+        path = AccessPath.extend(self.context._access_current(), AttributeAccess(self.name))
+        self.context._access_guard(path)
 
         if self._object_type is not None:
             try:
@@ -191,6 +198,7 @@ class GetAttributeExpression(ExpressionBase):
                             suggestion=suggest_symbol(self.name, self._object_type.attributes.keys())
                     ) from None
                 value = default_value
+            self.context._access_publish(path)
             return self._new_value(value, verify_type=False)
 
         attribute_error = None
@@ -199,6 +207,7 @@ class GetAttributeExpression(ExpressionBase):
         except errors.AttributeResolutionError as error:
             attribute_error = error
         else:
+            self.context._access_publish(path)
             return self._new_value(value, verify_type=False)
 
         if isinstance(resolved_obj, collections.abc.Mapping) and not isinstance(resolved_obj, _builtins.Builtins):
@@ -218,6 +227,7 @@ class GetAttributeExpression(ExpressionBase):
                 attribute_error.suggestion = suggestion
                 raise attribute_error from None
             value = default_value
+        self.context._access_publish(path)
         return self._new_value(value, verify_type=False)
 
     def reduce(self) -> ExpressionBase:
@@ -300,19 +310,25 @@ class GetItemExpression(ExpressionBase):
         resolved_obj = self.container.evaluate(thing)
         if resolved_obj is None:
             if self.safe:
+                self.context._access_publish(None)
                 return resolved_obj
             raise errors.EvaluationError('data type mismatch (container is null)')
 
+        container_path = self.context._access_current()
         resolved_item = self.item.evaluate(thing)
         if isinstance(resolved_obj, (bytes, str, tuple)):
             _assert_is_integer_number(resolved_item)
             resolved_item = int(resolved_item)
+        path = AccessPath.extend(container_path, ItemAccess(resolved_item))
+        self.context._access_guard(path)
         try:
             value = operator.getitem(resolved_obj, resolved_item)
         except (IndexError, KeyError):
             if self.safe:
+                self.context._access_publish(None)
                 return None
             raise errors.LookupError(resolved_obj, resolved_item)
+        self.context._access_publish(path)
         return self._new_value(value, verify_type=False)
 
     def reduce(self) -> ExpressionBase:
@@ -405,9 +421,11 @@ class GetSliceExpression(ExpressionBase):
         resolved_obj = self.container.evaluate(thing)
         if resolved_obj is None:
             if self.safe:
+                self.context._access_publish(None)
                 return resolved_obj
             raise errors.EvaluationError('data type mismatch')
 
+        container_path = self.context._access_current()
         resolved_start = self.start.evaluate(thing)
         if resolved_start is not None:
             _assert_is_integer_number(resolved_start)
@@ -416,7 +434,10 @@ class GetSliceExpression(ExpressionBase):
         if resolved_stop is not None:
             _assert_is_integer_number(resolved_stop)
             resolved_stop = int(resolved_stop)
+        path = AccessPath.extend(container_path, SliceAccess(resolved_start, resolved_stop))
+        self.context._access_guard(path)
         value = operator.getitem(resolved_obj, slice(resolved_start, resolved_stop))
+        self.context._access_publish(path)
         return coerce_value(value, verify_type=False)
 
     def reduce(self) -> ExpressionBase:

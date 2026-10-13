@@ -7,6 +7,19 @@ this list is curated by the development team for note worthy changes.
 Version 5.x.x
 -------------
 
+Version 5.1.0
+^^^^^^^^^^^^^
+
+* Added :py:class:`~rule_engine.engine.AccessPolicy`, a policy interface attached to a
+  :py:class:`~rule_engine.engine.Context` via the new *access_policy* parameter. While a rule is evaluated, the policy
+  is consulted with the full :py:class:`~rule_engine.engine.AccessPath` immediately before every symbol, attribute,
+  item or slice is read and before every function is called. This allows individual nested reads (such as
+  ``user.address.ssn`` or ``users[0].ssn``) to be allowed or denied even when a top-level *resolver* whitelist alone
+  can not observe them. A denied access raises :py:exc:`~rule_engine.errors.AccessDeniedError`. Paths stay accurate in
+  short-circuit branches, ternary expressions, array comprehensions (where the iteration variable aliases the
+  element's path) and nested calls, and parse-time reductions of constant expressions are not consulted. A ready-made
+  :py:class:`~rule_engine.engine.WhitelistAccessPolicy` is included.
+
 Version 5.0.0
 ^^^^^^^^^^^^^
 

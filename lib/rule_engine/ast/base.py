@@ -175,22 +175,32 @@ def _resolve_type(definition: _DataTypeDef, context: 'Context') -> _DataTypeDef:
 
 class Assignment(object):
     """An internal assignment whereby a symbol is populated with a value of the specified type."""
-    __slots__ = ('name', 'value', 'value_type')
+    __slots__ = ('name', 'value', 'value_type', 'access_path')
     name: str
     value: Any
     value_type: _DataTypeDef | None
-    def __init__(self, name: str, *, value: Any = errors.UNDEFINED, value_type: _DataTypeDef | None = None) -> None:
+    def __init__(
+            self,
+            name: str,
+            *,
+            value: Any = errors.UNDEFINED,
+            value_type: _DataTypeDef | None = None,
+            access_path: Any = None
+    ) -> None:
         """
         :param str name: The symbol name that the assignment is defining.
         :param value: The value of the assignment.
         :param value_type: The data type of the assignment.
         :type value_type: :py:class:`~.DataType`
+        :param access_path: The :py:class:`~rule_engine.engine.AccessPath` at which *value* was read, used so that
+                symbols aliasing a value (such as comprehension variables) keep the path of what they refer to.
         """
         self.name = name
         self.value = value
         if value is not errors.UNDEFINED and value_type is not None:
             value_type = DataType.from_value(value)
         self.value_type = value_type
+        self.access_path = access_path
 
     def __repr__(self) -> str:
         return "<{} name={!r} value={!r} value_type={!r} >".format(self.__class__.__name__, self.name, self.value, self.value_type)
@@ -299,6 +309,7 @@ class LiteralExpressionBase(ExpressionBase):
         return subclass(context, value)
 
     def evaluate(self, thing: Any) -> Any:
+        self.context._access_publish(None)
         return self.value
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:

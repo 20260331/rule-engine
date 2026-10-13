@@ -36,6 +36,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from .engine._access_policy import AccessPath
     from .types.definitions import _DataTypeDef
 
 
@@ -81,6 +82,22 @@ class EvaluationError(EngineError):
     An error raised for issues which occur while the rule is being evaluated. This can occur at parse time while AST
     nodes are being evaluated during the reduction phase.
     """
+
+class AccessDeniedError(EvaluationError):
+    """
+    An error raised when an :py:class:`~rule_engine.engine.AccessPolicy` denies a read or call at an
+    :py:class:`~rule_engine.engine.AccessPath`. The error is raised before the denied value is read or the denied
+    function is called.
+
+    .. versionadded:: 5.1.0
+    """
+    def __init__(self, path: 'AccessPath') -> None:
+        """
+        :param path: The access path that was denied by the policy.
+        """
+        self.path = path
+        """The :py:class:`~rule_engine.engine.AccessPath` that the policy denied."""
+        super(AccessDeniedError, self).__init__("access denied: {0!s}".format(path))
 
 class SyntaxError(EngineError):
     """A base error for syntax related issues."""

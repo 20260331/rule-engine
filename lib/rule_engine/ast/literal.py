@@ -51,7 +51,10 @@ class _CollectionMixin(object):
     result_type: _DataTypeDef
     value: Any
     def evaluate(self, thing: Any) -> Any:
-        return self.result_type.python_type(member.evaluate(thing) for member in self.value)
+        value = self.result_type.python_type(member.evaluate(thing) for member in self.value)
+        # a literal collection is constructed rather than read from the object, so it is not anchored to a path
+        self.context._access_publish(None)  # type: ignore[attr-defined]
+        return value
 
     @property
     def is_reduced(self) -> bool:  # type: ignore[override]
@@ -151,6 +154,7 @@ class MappingExpression(LiteralExpressionBase):
         # defer value evaluation to avoid evaluating values of duplicate keys
         for key, value in mapping.items():
             mapping[key] = value.evaluate(thing)
+        self.context._access_publish(None)
         return mapping
 
     @property

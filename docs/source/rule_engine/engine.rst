@@ -22,6 +22,42 @@ Functions
 Classes
 -------
 
+.. autoclass:: AccessPath
+   :members:
+   :special-members: __init__, __str__
+
+.. autoclass:: AccessStep
+   :members:
+
+.. autoclass:: SymbolAccess
+   :members:
+   :special-members: __init__
+
+.. autoclass:: AttributeAccess
+   :members:
+   :special-members: __init__
+
+.. autoclass:: ItemAccess
+   :members:
+   :special-members: __init__
+
+.. autoclass:: SliceAccess
+   :members:
+   :special-members: __init__
+
+.. autoclass:: CallAccess
+   :members:
+   :special-members: __init__
+
+.. autoclass:: AccessPolicy
+   :members:
+
+.. autoclass:: WhitelistAccessPolicy
+   :members:
+   :special-members: __init__
+
+.. autodata:: ANY
+
 .. autoclass:: Context
    :members:
    :show-inheritance:

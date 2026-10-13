@@ -30,6 +30,7 @@
 #  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+from .access_policy import *
 from .ast import *
 from .builtins import *
 from .engine import *

@@ -97,7 +97,10 @@ class BinaryExpressionBase(ExpressionBase):
         return "<{} type={!r} >".format(self.__class__.__name__, self.type)
 
     def evaluate(self, thing: Any) -> Any:
-        return self._evaluator(thing)
+        result = self._evaluator(thing)
+        # binary expressions compute a fresh value from their operands, so the result is not anchored to a path
+        self.context._access_publish(None)
+        return result
 
     def reduce(self) -> ExpressionBase:
         if not _is_reduced(self.left, self.right):

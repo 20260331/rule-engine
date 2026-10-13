@@ -30,5 +30,16 @@
 #  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+from ._access_policy import (
+		ANY,
+		AccessPath,
+		AccessPolicy,
+		AttributeAccess,
+		CallAccess,
+		ItemAccess,
+		SliceAccess,
+		SymbolAccess,
+		WhitelistAccessPolicy,
+)
 from .context import resolve_attribute, resolve_item, type_resolver_from_dataclass, type_resolver_from_dict, type_resolver_from_sqlalchemy, Context
 from .rule import Rule, DebugRule

@@ -49,6 +49,11 @@ Exceptions
    :show-inheritance:
    :special-members: __init__
 
+.. autoexception:: AccessDeniedError
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
 .. autoexception:: EvaluationError
    :members:
    :show-inheritance:
@@ -115,6 +120,7 @@ The class hierarchy for Rule Engine exceptions is:
 
    EngineError
     +-- EvaluationError
+         +-- AccessDeniedError
          +-- ArithmeticError
          +-- AttributeResolutionError
               +-- ObjectAttributeError

@@ -37,6 +37,7 @@ import operator
 from typing import TYPE_CHECKING, Any, Callable
 
 from ... import errors
+from ...engine._access_policy import AccessPath, ItemAccess
 from ...types import DataType, is_numeric
 from ...types import _DataTypeDef
 
@@ -106,11 +107,18 @@ class ComprehensionExpression(ExpressionBase):
         input_iterable = self.iterable.evaluate(thing)
         if not DataType.from_value(input_iterable).is_iterable:
             raise errors.EvaluationError('data type mismatch (comprehension requires an iterable)')
-        for value in input_iterable:
-            assignment = Assignment(self.variable, value=value)
+        iterable_path = self.context._access_current()
+        for index, value in enumerate(input_iterable):
+            # the iteration reads each element; give the alias the element's path so the body keeps path accuracy
+            element_path = AccessPath.extend(iterable_path, ItemAccess(index))
+            self.context._access_guard(element_path)
+            self.context._access_publish(element_path)
+            assignment = Assignment(self.variable, value=value, access_path=element_path)
             with self.context.assignments(assignment):
                 if self.condition is None or self.condition.evaluate(thing):
                     output_array.append(self.result.evaluate(thing))
+        # the result is a freshly built array which keeps the iterable's provenance
+        self.context._access_publish(iterable_path)
         return tuple(output_array)
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:
@@ -221,7 +229,10 @@ class UnaryExpression(ExpressionBase):
         return "<{} type={!r} >".format(self.__class__.__name__, self.type)
 
     def evaluate(self, thing: Any) -> Any:
-        return self._evaluator(thing)
+        result = self._evaluator(thing)
+        # a unary result is computed rather than read from the object, so it is not anchored to a path
+        self.context._access_publish(None)
+        return result
 
     def __op(self, op: Callable[[Any], Any], thing: Any) -> Any:
         return op(self.right.evaluate(thing))

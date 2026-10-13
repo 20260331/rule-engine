@@ -48,6 +48,7 @@ from .. import types
 from ..suggestions import suggest_symbol
 from ..types import DataType, _DataTypeDef
 
+from ._access_policy import AccessPath, AccessPolicy
 from ._attribute_resolver import _AttributeResolver
 
 import dateutil.tz
@@ -206,16 +207,22 @@ class _ThreadLocalStorage(object):
     if a context is used by one or more rules that are being evaluated simultaneously in multiple threads, that the
     states are kept isolated.
     """
-    __slots__ = ('assignment_scopes', 'regex_groups')
+    __slots__ = ('assignment_scopes', 'regex_groups', 'access_active', 'access_path')
     assignment_scopes: 'collections.deque[dict[str, ast.Assignment]]'
     regex_groups: tuple[str, ...] | None
+    access_active: bool
+    access_path: AccessPath | None
     def __init__(self) -> None:
         self.assignment_scopes = collections.deque()
         self.regex_groups = None
+        self.access_active = False
+        self.access_path = None
 
     def reset(self) -> None:
         self.assignment_scopes.clear()
         self.regex_groups = None
+        self.access_active = False
+        self.access_path = None
 
 class Context(object):
     """
@@ -231,7 +238,8 @@ class Context(object):
                     default_timezone: str | datetime.tzinfo = 'local',
                     default_value: Any = errors.UNDEFINED,
                     decimal_context: decimal.Context | None = None,
-                    mapping_attribute_lookup: bool = True
+                    mapping_attribute_lookup: bool = True,
+                    access_policy: AccessPolicy | None = None
     ) -> None:
         """
         :param int regex_flags: The flags to provide to functions in the :py:mod:`re` module when calling either the
@@ -254,6 +262,11 @@ class Context(object):
                 back to ``mapping['key']`` and emits a :py:exc:`~rule_engine.errors.MappingAttributeLookupDeprecation`
                 once per context. When ``False``, attribute access on a :py:attr:`.MAPPING` raises a parse-time error.
                 This fallback is scheduled for removal in v6.0.
+        :param access_policy: An optional :py:class:`.AccessPolicy` to consult before each symbol, attribute, item or
+                slice is read and before each function is called while a rule is evaluated. The policy receives the
+                full :py:class:`.AccessPath` of the access, so nested reads that a top-level *resolver* whitelist can
+                not observe (such as ``user.address.ssn`` or ``users[0].ssn``) can be allowed or denied individually.
+                A denied access raises :py:exc:`~rule_engine.errors.AccessDeniedError`.
 
         .. versionchanged:: 2.0.0
                 Added the *default_value* parameter.
@@ -267,6 +280,9 @@ class Context(object):
 
         .. versionchanged:: 5.0.0
                 Added the *mapping_attribute_lookup* parameter.
+
+        .. versionchanged:: 5.1.0
+                Added the *access_policy* parameter.
         """
         self.regex_flags = regex_flags
         """The *regex_flags* parameter from :py:meth:`~__init__`"""
@@ -305,6 +321,10 @@ class Context(object):
         self.__resolver = resolver or resolve_item
         self.mapping_attribute_lookup = mapping_attribute_lookup
         """The *mapping_attribute_lookup* parameter from :py:meth:`~__init__`."""
+        if access_policy is not None and not isinstance(access_policy, AccessPolicy):
+            raise TypeError('access_policy must be an AccessPolicy instance, not ' + type(access_policy).__name__)
+        self.access_policy = access_policy
+        """The :py:class:`.AccessPolicy` consulted before each read or call while a rule is evaluated."""
         self._mapping_fallback_lock = threading.Lock()
         self._mapping_fallback_warned = False
 
@@ -317,6 +337,7 @@ class Context(object):
                 'decimal_context': self.decimal_context,
                 'mapping_attribute_lookup': self.mapping_attribute_lookup,
                 '_mapping_fallback_warned': self._mapping_fallback_warned,
+                'access_policy': self.access_policy,
                 '_Context__type_resolver': self.__type_resolver,
                 '_Context__resolver': self.__resolver,
         }
@@ -329,6 +350,7 @@ class Context(object):
         self.decimal_context = state['decimal_context']
         self.mapping_attribute_lookup = state['mapping_attribute_lookup']
         self._mapping_fallback_warned = state['_mapping_fallback_warned']
+        self.access_policy = state.get('access_policy')
         self.__type_resolver = state['_Context__type_resolver']
         self.__resolver = state['_Context__resolver']
         # recreate transient objects that can not be pickled
@@ -362,6 +384,52 @@ class Context(object):
         storage = self._thread_local.storage
         assert isinstance(storage, _ThreadLocalStorage)
         return storage
+
+    @contextlib.contextmanager
+    def _access_evaluation(self) -> Iterator[None]:
+        # mark the current thread as evaluating a rule so the access policy is consulted; this keeps parse-time
+        # reduction (which evaluates constant expressions without a thing) outside of the policy
+        tls = self._tls
+        previous_active, previous_path = tls.access_active, tls.access_path
+        tls.access_active = True
+        tls.access_path = None
+        try:
+            yield
+        finally:
+            tls.access_active = previous_active
+            tls.access_path = previous_path
+
+    def _access_guard(self, path: AccessPath) -> None:
+        # ask the policy before the value at *path* is read or called
+        tls = self._tls
+        if not tls.access_active or self.access_policy is None:
+            return
+        if not self.access_policy.allows(path):
+            raise errors.AccessDeniedError(path)
+
+    def _access_publish(self, path: AccessPath | None) -> None:
+        # record the path of the value most recently evaluated so the next attribute, item or call can extend it
+        tls = self._tls
+        if tls.access_active:
+            tls.access_path = path
+
+    def _access_current(self) -> AccessPath | None:
+        tls = self._tls
+        return tls.access_path if tls.access_active else None
+
+    def get_assignment(self, name: str) -> 'ast.Assignment | None':
+        """
+        Look up an in-scope :py:class:`~rule_engine.ast.Assignment` for *name* (such as a comprehension variable)
+        without resolving it. Assignments take precedence over the resolver. This returns :py:data:`None` when no
+        assignment with the specified name is in scope.
+
+        :param str name: The assignment name to look up.
+        :return: The assignment, or :py:data:`None` if none is in scope.
+        """
+        for assignments in self._tls.assignment_scopes:
+            if name in assignments:
+                return assignments[name]
+        return None
 
     def resolve(self, thing: Any, name: str, scope: str | None = None) -> Any:
         """
