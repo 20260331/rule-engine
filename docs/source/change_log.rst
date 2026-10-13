@@ -7,6 +7,22 @@ this list is curated by the development team for note worthy changes.
 Version 5.x.x
 -------------
 
+Version 5.1.0
+^^^^^^^^^^^^^
+
+* Added the new :py:attr:`~rule_engine.types.DataType.QUANTITY` data type, backed by the
+  :py:class:`~rule_engine.types.Quantity` class, for precise, dimensioned values. Literals append a unit suffix to a
+  number, e.g. ``30s``, ``500ms``, ``1024B`` and ``1KiB``. Quantities of the same dimension are compared, converted
+  and combined automatically; a quantity can be scaled by a number (``30s * 2``) and dividing two quantities of the
+  same dimension yields a dimensionless :py:attr:`~rule_engine.types.DataType.FLOAT` ratio.
+* Operations mixing dimensions (e.g. a time with an information size), or comparing a quantity against a plain
+  number, raise the new :py:class:`~rule_engine.errors.DimensionMismatchError` (a subclass of
+  :py:class:`~rule_engine.errors.EvaluationError`) or :py:class:`~rule_engine.errors.EvaluationError` — at parse time
+  when the dimensions are known statically, otherwise at evaluation time.
+* Added the ``seconds`` / ``milliseconds`` and ``bytes`` / ``kibibytes`` conversion attributes and the
+  ``$parse_quantity`` builtin function; malformed literals raise
+  :py:class:`~rule_engine.errors.QuantitySyntaxError`.
+
 Version 5.0.0
 ^^^^^^^^^^^^^
 

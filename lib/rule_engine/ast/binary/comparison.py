@@ -33,15 +33,32 @@
 import functools
 import operator
 import re
-from typing import Any, Callable
+from typing import Any, Callable, TypeGuard
 
 from ... import errors
 from ...types import DataType, coerce_value
-from ...types import _DataTypeDef
+from ...types import _DataTypeDef, _QuantityDataTypeDef
+from ...types.quantity import Quantity
 
 from ..base import _assert_not_nullable
 from ..literal import StringExpression
 from .base import BinaryExpressionBase
+
+def _is_quantity_type(dt: _DataTypeDef) -> TypeGuard[_QuantityDataTypeDef]:
+    return DataType.is_type(dt, DataType.QUANTITY)
+
+def _assert_equality_operands_compatible(left_type: _DataTypeDef, right_type: _DataTypeDef) -> None:
+    # equality between unrelated non-quantity types is allowed (and evaluates to false), but a quantity may only be
+    # compared to another quantity of the same dimension so that unit mismatches never compare silently. NULL is
+    # permitted so that nullable quantities can be null-checked with "quantity == null".
+    if not (_is_quantity_type(left_type) or _is_quantity_type(right_type)):
+        return
+    if _is_quantity_type(left_type) and _is_quantity_type(right_type):
+        if not DataType.is_compatible(left_type, right_type):
+            raise errors.DimensionMismatchError(left_type.dimension or 'UNKNOWN', right_type.dimension or 'UNKNOWN')
+        return
+    if left_type != DataType.NULL and right_type != DataType.NULL:
+        raise errors.EvaluationError('data type mismatch (a quantity can not be compared to a non-quantity value)')
 
 class LogicExpression(BinaryExpressionBase):
     """A class for representing logical expressions from the grammar text such as "and" and "or"."""
@@ -53,33 +70,53 @@ class LogicExpression(BinaryExpressionBase):
 
 class ComparisonExpression(BinaryExpressionBase):
     """A class for representing comparison expressions from the grammar text such as equality checks."""
-    compatible_types: tuple[_DataTypeDef, ...] = BinaryExpressionBase.compatible_types + (DataType.OBJECT,)
-    def _op_eq(self, thing: Any) -> bool:
+    compatible_types: tuple[_DataTypeDef, ...] = BinaryExpressionBase.compatible_types + (DataType.OBJECT, DataType.QUANTITY)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super(ComparisonExpression, self).__init__(*args, **kwargs)
+        if self.left.result_type != DataType.UNDEFINED and self.right.result_type != DataType.UNDEFINED:
+            _assert_equality_operands_compatible(self.left.result_type, self.right.result_type)
+
+    def __op_equality(self, op: Callable[[Any, Any], bool], thing: Any) -> bool:
         left_value = self.left.evaluate(thing)
         right_value = self.right.evaluate(thing)
+        if isinstance(left_value, Quantity) or isinstance(right_value, Quantity):
+            if isinstance(left_value, Quantity) and isinstance(right_value, Quantity):
+                left_value._check_compatible(right_value)
+                return op(left_value, right_value)
+            # mirror the other data types: a quantity is not equal to NULL (but null == null is true)
+            if left_value is None or right_value is None:
+                both_null = left_value is None and right_value is None
+                return both_null if op is operator.eq else not both_null
+            raise errors.EvaluationError('data type mismatch (a quantity can not be compared to a non-quantity value)')
         if type(left_value) is not type(right_value):
-            return False
-        return operator.eq(left_value, right_value)
+            return op is operator.ne
+        return op(left_value, right_value)
+
+    def _op_eq(self, thing: Any) -> bool:
+        return self.__op_equality(operator.eq, thing)
 
     def _op_ne(self, thing: Any) -> bool:
-        left_value = self.left.evaluate(thing)
-        right_value = self.right.evaluate(thing)
-        if type(left_value) is not type(right_value):
-            return True
-        return operator.ne(left_value, right_value)
+        return self.__op_equality(operator.ne, thing)
 
 class ArithmeticComparisonExpression(ComparisonExpression):
     """
     A class for representing arithmetic comparison expressions from the grammar text such as less-than-or-equal-to and
     greater-than.
     """
-    compatible_types: tuple[_DataTypeDef, ...] = (DataType.ARRAY, DataType.BOOLEAN, DataType.DATETIME, DataType.TIMEDELTA, DataType.FLOAT, DataType.NULL, DataType.STRING)
+    compatible_types: tuple[_DataTypeDef, ...] = (DataType.ARRAY, DataType.BOOLEAN, DataType.DATETIME, DataType.TIMEDELTA, DataType.FLOAT, DataType.NULL, DataType.QUANTITY, DataType.STRING)
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super(ArithmeticComparisonExpression, self).__init__(*args, **kwargs)
         _assert_not_nullable(self.left.result_type, role='left ordered-comparison operand')
         _assert_not_nullable(self.right.result_type, role='right ordered-comparison operand')
         if self.left.result_type != DataType.UNDEFINED and self.right.result_type != DataType.UNDEFINED:
-            if self.left.result_type != self.right.result_type:
+            if _is_quantity_type(self.left.result_type) or _is_quantity_type(self.right.result_type):
+                # the dimension-less QUANTITY sentinel stands for an unknown dimension and is deferred to evaluation
+                # time, while two concrete dimensions must match (the super constructor already handles the case of
+                # a quantity compared to a non-quantity)
+                if not DataType.is_compatible(self.left.result_type, self.right.result_type):
+                    raise errors.EvaluationError('data type mismatch')
+            elif self.left.result_type != self.right.result_type:
                 raise errors.EvaluationError('data type mismatch')
 
     def __op_arithmetic(self, op: Callable[[Any, Any], Any], thing: Any) -> Any:

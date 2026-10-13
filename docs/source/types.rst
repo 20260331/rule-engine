@@ -36,6 +36,8 @@ compatible with. For a information regarding supported operations, see the
 +-------------------------------+-------------------------------+
 | :py:attr:`~DataType.OBJECT`   | *any* (schema-driven)         |
 +-------------------------------+-------------------------------+
+| :py:attr:`~DataType.QUANTITY` | :py:class:`Quantity`          |
++-------------------------------+-------------------------------+
 | :py:attr:`~DataType.SET`      | :py:class:`set`               |
 +-------------------------------+-------------------------------+
 | :py:attr:`~DataType.STRING`   | :py:class:`str`               |
@@ -341,6 +343,54 @@ to rule authors. Rule Engine contains a few :ref:`builtin functions<builtin-func
 Additional functions must be defined in Python and can either be added to the evaluated object or by
 :ref:`extending the builtin symbols<changing-builtin-symbols>`. It is only possible to call a function from within the
 rule text. Functions can not be defined by rule authors as other data types can be.
+
+.. _data-types-quantity:
+
+QUANTITY
+--------
+
+.. versionadded:: 5.1.0
+
+See :ref:`literal-quantity-values` for syntax.
+
+The :py:attr:`~DataType.QUANTITY` datatype is a precise, dimensioned value — a :py:class:`~decimal.Decimal` magnitude
+together with a :py:class:`Unit` — backed by the :py:class:`Quantity` class. It exists so that rules mixing units such
+as seconds with milliseconds, or bytes with kibibytes, can not silently produce the wrong result through a plain
+numeric comparison.
+
+Each unit belongs to a *dimension*:
+
+* ``TIME``: ``s`` (seconds, the base unit) and ``ms`` (milliseconds, ``1 ms = 0.001 s``)
+* ``INFORMATION``: ``B`` (bytes, the base unit) and ``KiB`` (kibibytes, ``1 KiB = 1024 B``)
+
+All conversion factors are exact decimals, and arithmetic honors the active :py:class:`~decimal.Context`, keeping the
+semantics of :py:attr:`~DataType.FLOAT`. Two quantities of the same dimension can be compared, added and subtracted
+regardless of their unit (units are converted automatically), a quantity may be scaled by multiplication or division
+with a plain number, and dividing two quantities of the same dimension yields a dimensionless
+:py:attr:`~DataType.FLOAT` ratio. The attributes ``seconds`` / ``milliseconds`` and ``bytes`` / ``kibibytes`` provide
+explicit conversion to a plain :py:attr:`~DataType.FLOAT` value.
+
+* ``1s == 1000ms`` (and ``1KiB == 1024B``) evaluate to ``True``
+* ``30s * 2 == 60s`` and ``1KiB / 512B == 2``
+* ``1500ms.seconds`` evaluates to the :py:class:`~decimal.Decimal` value ``1.5``
+
+Operations between different dimensions (e.g. a time versus an information size), or between a quantity and a plain
+number in a comparison, raise :py:class:`~rule_engine.errors.DimensionMismatchError` or
+:py:class:`~rule_engine.errors.EvaluationError`. When both operands have statically known types the error is raised
+while the rule is parsed; otherwise it is raised while the rule is evaluated.
+
+Like the other parameterized types, ``QUANTITY`` carries its dimension statically: ``DataType.QUANTITY('TIME')`` and
+``DataType.QUANTITY('INFORMATION')`` are distinct, while the bare ``DataType.QUANTITY`` sentinel stands for a quantity
+whose dimension is not known statically (such as the return value of the ``parse_quantity`` builtin). Quantities can be
+provided to a rule directly as Python values and used in :py:attr:`~DataType.OBJECT` schemas,
+:py:meth:`~DataType.from_type` mappings, arrays, sets and mappings:
+
+.. code-block:: python
+
+   from rule_engine.types import Quantity
+
+   Rule('latency > 500ms').evaluate({'latency': Quantity(1, 's')})   # True
+   Rule('size > 1KiB').evaluate({'size': Quantity(2048, 'B')})      # True
 
 TIMEDELTA
 ---------

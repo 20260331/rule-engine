@@ -373,6 +373,55 @@ class ParserLiteralTests(ParserTestsBase):
         self.assertLiteralStatementEvalEqual('t"P7W6DT5H4M3S".microseconds', decimal.Decimal('0'))
         self.assertLiteralStatementEvalEqual('t"P7W6DT5H4M3S".total_seconds', decimal.Decimal('4770243'))
 
+    def test_parse_quantity(self):
+        self.assertLiteralStatementEqual('0s', ast.QuantityExpression, types.Quantity(0, 's'))
+        self.assertLiteralStatementEqual('1s', ast.QuantityExpression, types.Quantity(1, 's'))
+        self.assertLiteralStatementEqual('500ms', ast.QuantityExpression, types.Quantity(500, 'ms'))
+        self.assertLiteralStatementEqual('1024B', ast.QuantityExpression, types.Quantity(1024, 'B'))
+        self.assertLiteralStatementEqual('1KiB', ast.QuantityExpression, types.Quantity(1, 'KiB'))
+        self.assertLiteralStatementEqual('1.5s', ast.QuantityExpression, types.Quantity(decimal.Decimal('1.5'), 's'))
+        self.assertLiteralStatementEqual('.25ms', ast.QuantityExpression, types.Quantity(decimal.Decimal('0.25'), 'ms'))
+        self.assertLiteralStatementEqual('1e3s', ast.QuantityExpression, types.Quantity(1000, 's'))
+        self.assertLiteralStatementEqual('1.KiB', ast.QuantityExpression, types.Quantity(1, 'KiB'))
+        # the static result type is parameterized with the literal's dimension
+        self.assertEqual(self._parse('1s', self.context).expression.result_type, types.DataType.QUANTITY('TIME'))
+        self.assertEqual(self._parse('1B', self.context).expression.result_type, types.DataType.QUANTITY('INFORMATION'))
+
+    def test_parse_quantity_not_a_float(self):
+        # a number without a unit suffix is still a FLOAT literal
+        self.assertStatementType('1', ast.FloatExpression)
+        self.assertStatementType('100', ast.FloatExpression)
+        # an unknown or missing unit is a syntax error rather than a silent numeric comparison
+        for rule in ('1m', '1x', '100bytes', '1 kbps'):
+            with self.assertRaises(errors.RuleSyntaxError, msg=rule):
+                self._parse(rule, self.context)
+        with self.assertRaises(errors.QuantitySyntaxError):
+            parser.utilities.parse_quantity('invalid')
+
+    def test_parse_quantity_attributes(self):
+        self.assertLiteralStatementEvalEqual('1s.seconds', decimal.Decimal('1'))
+        self.assertLiteralStatementEvalEqual('1s.milliseconds', decimal.Decimal('1000'))
+        self.assertLiteralStatementEvalEqual('1500ms.seconds', decimal.Decimal('1.5'))
+        self.assertLiteralStatementEvalEqual('1KiB.bytes', decimal.Decimal('1024'))
+        self.assertLiteralStatementEvalEqual('1536B.kibibytes', decimal.Decimal('1.5'))
+        # attributes of the wrong dimension are rejected at parse time
+        with self.assertRaises(errors.AttributeResolutionError):
+            self._parse('1s.bytes', self.context)
+        with self.assertRaises(errors.AttributeResolutionError):
+            self._parse('1B.seconds', self.context)
+
+    def test_parse_quantity_dimension_mismatches(self):
+        # incompatible dimensions are rejected during parsing (the AST reduction phase evaluates literal operations)
+        for rule in (
+                '1s == 1B', '1s != 1KiB', '1s < 1B', '1s >= 1ms + 1B',
+                '1s + 1B', '1B - 1ms', '1s * 1ms', '1s ** 2',
+                '1s == 1', '1 > 1B'
+        ):
+            with self.assertRaises(errors.EvaluationError, msg=rule):
+                self._parse(rule, self.context)
+        with self.assertRaises(errors.DimensionMismatchError):
+            self._parse('1s > 1B', self.context)
+
     def test_parse_float(self):
         self.assertLiteralStatementEqual('3.14', ast.FloatExpression, decimal.Decimal('3.14'))
         self.assertLiteralStatementEqual('3.140', ast.FloatExpression, decimal.Decimal('3.140'))

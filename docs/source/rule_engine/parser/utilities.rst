@@ -13,4 +13,6 @@ Functions
 
 .. autofunction:: parse_float
 
+.. autofunction:: parse_quantity
+
 .. autofunction:: parse_timedelta

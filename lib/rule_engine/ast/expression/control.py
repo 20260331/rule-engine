@@ -49,7 +49,8 @@ from ..base import (
         _propagate_nullable,
         _resolve_type,
 )
-from ..literal import BooleanExpression, FloatExpression, TimedeltaExpression
+from ..literal import BooleanExpression, FloatExpression, QuantityExpression, TimedeltaExpression
+from ...types.quantity import Quantity
 
 if TYPE_CHECKING:
     from ...engine.context import Context
@@ -230,8 +231,8 @@ class UnaryExpression(ExpressionBase):
 
     def __op_arithmetic(self, op: Callable[[Any], Any], thing: Any) -> Any:
         right = self.right.evaluate(thing)
-        if not is_numeric(right) and not isinstance(right, datetime.timedelta):
-            raise errors.EvaluationError('data type mismatch (not a numeric or timedelta value)')
+        if not is_numeric(right) and not isinstance(right, (datetime.timedelta, Quantity)):
+            raise errors.EvaluationError('data type mismatch (not a numeric, timedelta or quantity value)')
         return op(right)
 
     _op_uminus = functools.partialmethod(__op_arithmetic, operator.neg)
@@ -247,7 +248,9 @@ class UnaryExpression(ExpressionBase):
                 return FloatExpression(self.context, self.evaluate(None))
             elif isinstance(self.right, TimedeltaExpression):
                 return TimedeltaExpression(self.context, self.evaluate(None))
-            raise errors.EvaluationError('data type mismatch (not a float or timedelta expression)')
+            elif isinstance(self.right, QuantityExpression):
+                return QuantityExpression(self.context, self.evaluate(None))
+            raise errors.EvaluationError('data type mismatch (not a float, timedelta or quantity expression)')
         raise errors.EngineError('unsupported unary expression type')
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:

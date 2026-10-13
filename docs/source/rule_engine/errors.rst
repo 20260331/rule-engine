@@ -39,6 +39,11 @@ Exceptions
    :show-inheritance:
    :special-members: __init__
 
+.. autoexception:: DimensionMismatchError
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
 .. autoexception:: FloatSyntaxError
    :members:
    :show-inheritance:
@@ -72,6 +77,11 @@ Exceptions
    :show-inheritance:
 
 .. autoexception:: RegexSyntaxError
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
+.. autoexception:: QuantitySyntaxError
    :members:
    :show-inheritance:
    :special-members: __init__
@@ -119,6 +129,7 @@ The class hierarchy for Rule Engine exceptions is:
          +-- AttributeResolutionError
               +-- ObjectAttributeError
          +-- AttributeTypeError
+         +-- DimensionMismatchError
          +-- FunctionCallError
          +-- LookupError
          +-- SymbolResolutionError
@@ -127,6 +138,7 @@ The class hierarchy for Rule Engine exceptions is:
          +-- BytesSyntaxError
          +-- DatetimeSyntaxError
          +-- FloatSyntaxError
+         +-- QuantitySyntaxError
          +-- RegexSyntaxError
          +-- RuleSyntaxError
          +-- StringSyntaxError

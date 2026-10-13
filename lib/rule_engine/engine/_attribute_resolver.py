@@ -44,6 +44,7 @@ from .. import parser
 from .. import types
 from ..suggestions import suggest_symbol
 from ..types import _CollectionDataTypeDef, _DataTypeDef
+from ..types.quantity import DIMENSION_INFORMATION, DIMENSION_TIME, Quantity
 
 def _float_op(value: decimal.Decimal, op: Callable[[decimal.Decimal], Any]) -> Any:
     if value.is_nan() or value.is_infinite():
@@ -307,6 +308,22 @@ class _AttributeResolver(object):
     @attribute('total_seconds', types.DataType.TIMEDELTA, result_type=types.DataType.FLOAT)
     def timedelta_total_seconds(self, value: datetime.timedelta) -> float:
         return value.total_seconds()
+
+    @attribute('seconds', types.DataType.QUANTITY(DIMENSION_TIME), result_type=types.DataType.FLOAT)
+    def quantity_time_seconds(self, value: 'Quantity') -> decimal.Decimal:
+        return value.to('s').value
+
+    @attribute('milliseconds', types.DataType.QUANTITY(DIMENSION_TIME), result_type=types.DataType.FLOAT)
+    def quantity_time_milliseconds(self, value: 'Quantity') -> decimal.Decimal:
+        return value.to('ms').value
+
+    @attribute('bytes', types.DataType.QUANTITY(DIMENSION_INFORMATION), result_type=types.DataType.FLOAT)
+    def quantity_information_bytes(self, value: 'Quantity') -> decimal.Decimal:
+        return value.to('B').value
+
+    @attribute('kibibytes', types.DataType.QUANTITY(DIMENSION_INFORMATION), result_type=types.DataType.FLOAT)
+    def quantity_information_kibibytes(self, value: 'Quantity') -> decimal.Decimal:
+        return value.to('KiB').value
 
     @attribute('ends_with', types.DataType.ARRAY, types.DataType.BYTES, types.DataType.STRING, type_resolver=functools.partial(_value_with_result_type, 'ends_with'))
     def value_ends_with(self, value: Sequence[Any]) -> Callable[..., bool]:

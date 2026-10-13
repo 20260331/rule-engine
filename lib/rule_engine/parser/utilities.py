@@ -38,6 +38,8 @@ import re
 
 from . import errors
 
+from ..types.quantity import Quantity, get_unit
+
 import dateutil.parser
 
 _sub_regex = r'[0-9]+([,.][0-9]+)?'
@@ -51,6 +53,12 @@ timedelta_regex = (
         r'(?P<seconds>' + _sub_regex + r'S)?'
         r')?'
 )
+
+# unit symbols are ordered longest first so alternation prefers e.g. "ms" over "m" and "KiB" over "B"
+quantity_unit_regex = r'KiB|ms|s|B'
+_quantity_value_regex = r'(?:[0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?|\.[0-9]+(?:[eE][+-]?[0-9]+)?)'
+# the trailing negative look-ahead keeps the unit from matching a prefix of a longer identifier (e.g. "s" in "seconds")
+quantity_regex = _quantity_value_regex + r'(?:' + quantity_unit_regex + r')(?![0-9A-Za-z_])'
 
 def parse_datetime(string: str, default_timezone: datetime.tzinfo) -> datetime.datetime:
     """
@@ -85,6 +93,29 @@ def parse_float(string: str) -> decimal.Decimal:
     except Exception:
         raise errors.FloatSyntaxError('invalid floating point literal', string) from None
     return val
+
+def parse_quantity(string: str) -> Quantity:
+    """
+    Parse a literal string representing a dimensioned quantity (a decimal number immediately followed by a unit
+    symbol, e.g. ``30s``, ``500ms``, ``1024B`` or ``1KiB``).
+
+    :param str string: The string to parse.
+    :rtype: Quantity
+
+    .. versionadded:: 5.1.0
+    """
+    match = re.match(r'^(?P<value>' + _quantity_value_regex + r')(?P<unit>' + quantity_unit_regex + r')$', string)
+    if not match:
+        raise errors.QuantitySyntaxError('invalid quantity literal', string)
+    try:
+        value = parse_float(match.group('value'))
+    except errors.FloatSyntaxError:
+        raise errors.QuantitySyntaxError('invalid quantity literal', string) from None
+    try:
+        unit = get_unit(match.group('unit'))
+    except ValueError:
+        raise errors.QuantitySyntaxError('invalid quantity literal (unknown unit)', string) from None
+    return Quantity(value, unit)
 
 def parse_timedelta(string: str) -> datetime.timedelta:
     """

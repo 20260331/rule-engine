@@ -40,7 +40,7 @@ from typing import Any
 from .. import ast
 from .. import errors
 from .base import ParserBase
-from .utilities import timedelta_regex
+from .utilities import quantity_regex, timedelta_regex
 
 literal_eval = pyast.literal_eval
 
@@ -130,7 +130,7 @@ class Parser(ParserBase):
             'if': 'IF'
     }
     tokens = (
-            'BYTES', 'DATETIME', 'TIMEDELTA', 'FLOAT', 'STRING', 'SYMBOL',
+            'BYTES', 'DATETIME', 'TIMEDELTA', 'QUANTITY', 'FLOAT', 'STRING', 'SYMBOL',
             'LPAREN', 'RPAREN', 'QMARK', 'COLON', 'COMMA',
             'LBRACKET', 'RBRACKET', 'LBRACE', 'RBRACE', 'COMMENT'
     ) + tuple(set(list(reserved_words.values()) + list(op_names.values())))
@@ -252,6 +252,11 @@ class Parser(ParserBase):
         r't(?P<quote>["\'])([^\\\n]|(\\.))*?(?P=quote)'
         t.value = t.value[2:-1]
         return t
+
+    def t_QUANTITY(self, t: Any) -> Any:
+        # the regex is assigned after the class body (see quantity_regex in parser.utilities)
+        return t
+    t_QUANTITY.__doc__ = quantity_regex
 
     def t_STRING(self, t: Any) -> Any:
         r'[rs]?(?P<quote>["\'])([^\\\n]|(\\.))*?(?P=quote)'
@@ -469,6 +474,10 @@ class Parser(ParserBase):
     def p_expression_timedelta(self, p: Any) -> None:
         'object : TIMEDELTA'
         p[0] = _DeferredAstNode(ast.TimedeltaExpression, args=(self.context, p[1]), method='from_string')
+
+    def p_expression_quantity(self, p: Any) -> None:
+        'object : QUANTITY'
+        p[0] = _DeferredAstNode(ast.QuantityExpression, args=(self.context, p[1]), method='from_string')
 
     def p_expression_float(self, p: Any) -> None:
         """

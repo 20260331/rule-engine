@@ -147,6 +147,46 @@ class _NullableDataTypeDef(_DataTypeDef):
             return dt
         return _NullableDataTypeDef('NULLABLE', object, inner_type=dt)
 
+class _QuantityDataTypeDef(_DataTypeDef):
+    """
+    A scalar type definition for :py:class:`~rule_engine.types.Quantity` values. In addition to the ``QUANTITY`` base
+    name the definition carries a *dimension* (e.g. ``TIME`` or ``INFORMATION``): two quantities are statically
+    compatible only when their dimensions match (or one of them is the dimension-less sentinel, which represents a
+    quantity whose dimension is not statically known).
+
+    .. versionadded:: 5.1.0
+    """
+    __slots__ = ('dimension',)
+    dimension: str | None
+    def __init__(self, name: str, python_type: type, dimension: str | None = None) -> None:
+        super(_QuantityDataTypeDef, self).__init__(name, python_type)
+        self.dimension = dimension
+
+    def __call__(self, dimension: str) -> '_QuantityDataTypeDef':
+        """
+        :param str dimension: The physical dimension of the quantity, e.g. ``TIME`` or ``INFORMATION``.
+
+        .. versionadded:: 5.1.0
+        """
+        return self.__class__(self.name, self.python_type, dimension=dimension)
+
+    def __repr__(self) -> str:
+        return "<{} name={} python_type={} dimension={} >".format(
+                self.__class__.__name__,
+                self.name,
+                self.python_type.__name__,
+                self.dimension
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not super().__eq__(other):
+            return False
+        assert isinstance(other, _QuantityDataTypeDef)
+        return self.dimension == other.dimension
+
+    def __hash__(self) -> int:
+        return hash((self.python_type, self.is_scalar, self.dimension))
+
 class _CollectionDataTypeDef(_DataTypeDef):
     __slots__ = ('value_type',)
     value_type: _DataTypeDef

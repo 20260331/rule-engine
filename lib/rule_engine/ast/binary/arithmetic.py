@@ -33,18 +33,36 @@
 import datetime
 import functools
 import operator
-from typing import Any, Callable
+from typing import Any, Callable, TypeGuard
 
 from ... import errors
-from ...types import DataType, coerce_value
-from ...types import _DataTypeDef
+from ...types import DataType, coerce_value, is_numeric
+from ...types import _DataTypeDef, _QuantityDataTypeDef
+from ...types.quantity import Quantity
 
 from ..base import _assert_is_bytes, _assert_is_natural_number, _assert_is_numeric, _assert_is_string, _assert_not_nullable, _is_reduced
 from .base import BinaryExpressionBase
 
+def _is_quantity_type(dt: _DataTypeDef) -> TypeGuard[_QuantityDataTypeDef]:
+    return DataType.is_type(dt, DataType.QUANTITY)
+
+def _quantity_dimension(dt: _DataTypeDef) -> str | None:
+    return dt.dimension if _is_quantity_type(dt) else None
+
+def _assert_quantities_compatible(dt1: _DataTypeDef, dt2: _DataTypeDef) -> None:
+    # raise a clear error as soon as a concrete dimension mismatch is known statically; the dimension-less QUANTITY
+    # sentinel represents an unknown dimension and is left for evaluation-time validation
+    dim1, dim2 = _quantity_dimension(dt1), _quantity_dimension(dt2)
+    if dim1 is not None and dim2 is not None and dim1 != dim2:
+        raise errors.DimensionMismatchError(dim1, dim2)
+
+def _quantity_result_type(dt1: _DataTypeDef, dt2: _DataTypeDef) -> _DataTypeDef:
+    dim = _quantity_dimension(dt1) or _quantity_dimension(dt2)
+    return DataType.QUANTITY if dim is None else DataType.QUANTITY(dim)
+
 class AddExpression(BinaryExpressionBase):
     """A class for representing addition expressions from the grammar text."""
-    compatible_types: tuple[_DataTypeDef, ...] = (DataType.BYTES, DataType.FLOAT, DataType.STRING, DataType.DATETIME, DataType.TIMEDELTA)
+    compatible_types: tuple[_DataTypeDef, ...] = (DataType.BYTES, DataType.FLOAT, DataType.STRING, DataType.DATETIME, DataType.TIMEDELTA, DataType.QUANTITY)
     result_type: _DataTypeDef = DataType.UNDEFINED
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -52,7 +70,12 @@ class AddExpression(BinaryExpressionBase):
         _assert_not_nullable(self.left.result_type, role="left operand of '+'")
         _assert_not_nullable(self.right.result_type, role="right operand of '+'")
         if self.left.result_type != DataType.UNDEFINED and self.right.result_type != DataType.UNDEFINED:
-            if self.left.result_type == DataType.DATETIME:
+            if _is_quantity_type(self.left.result_type) or _is_quantity_type(self.right.result_type):
+                if not (_is_quantity_type(self.left.result_type) and _is_quantity_type(self.right.result_type)):
+                    raise errors.EvaluationError('data type mismatch (a quantity can only be added to a quantity)')
+                _assert_quantities_compatible(self.left.result_type, self.right.result_type)
+                self.result_type = _quantity_result_type(self.left.result_type, self.right.result_type)
+            elif self.left.result_type == DataType.DATETIME:
                 if self.right.result_type != DataType.TIMEDELTA:
                     raise errors.EvaluationError('data type mismatch')
                 self.result_type = self.left.result_type
@@ -68,6 +91,11 @@ class AddExpression(BinaryExpressionBase):
     def _op_add(self, thing: Any) -> Any:
         left_value = self.left.evaluate(thing)
         right_value = self.right.evaluate(thing)
+        if isinstance(left_value, Quantity) or isinstance(right_value, Quantity):
+            if not isinstance(left_value, Quantity) or not isinstance(right_value, Quantity):
+                raise errors.EvaluationError('data type mismatch (not a quantity value)')
+            # the Quantity value type enforces compatible dimensions and performs the unit conversion
+            return left_value + right_value
         if isinstance(left_value, datetime.datetime):
             if not isinstance(right_value, datetime.timedelta):
                 raise errors.EvaluationError('data type mismatch (not a timedelta value)')
@@ -88,7 +116,7 @@ class SubtractExpression(BinaryExpressionBase):
 
     .. versionadded:: 3.5.0
     """
-    compatible_types: tuple[_DataTypeDef, ...] = (DataType.FLOAT, DataType.DATETIME, DataType.TIMEDELTA)
+    compatible_types: tuple[_DataTypeDef, ...] = (DataType.FLOAT, DataType.DATETIME, DataType.TIMEDELTA, DataType.QUANTITY)
     result_type: _DataTypeDef = DataType.UNDEFINED
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -96,7 +124,12 @@ class SubtractExpression(BinaryExpressionBase):
         _assert_not_nullable(self.left.result_type, role="left operand of '-'")
         _assert_not_nullable(self.right.result_type, role="right operand of '-'")
         if self.left.result_type != DataType.UNDEFINED and self.right.result_type != DataType.UNDEFINED:
-            if self.left.result_type == DataType.DATETIME:
+            if _is_quantity_type(self.left.result_type) or _is_quantity_type(self.right.result_type):
+                if not (_is_quantity_type(self.left.result_type) and _is_quantity_type(self.right.result_type)):
+                    raise errors.EvaluationError('data type mismatch (a quantity can only be subtracted from a quantity)')
+                _assert_quantities_compatible(self.left.result_type, self.right.result_type)
+                self.result_type = _quantity_result_type(self.left.result_type, self.right.result_type)
+            elif self.left.result_type == DataType.DATETIME:
                 if self.right.result_type == DataType.DATETIME:
                     self.result_type = DataType.TIMEDELTA
                 elif self.right.result_type == DataType.TIMEDELTA:
@@ -115,6 +148,11 @@ class SubtractExpression(BinaryExpressionBase):
     def _op_sub(self, thing: Any) -> Any:
         left_value = self.left.evaluate(thing)
         right_value = self.right.evaluate(thing)
+        if isinstance(left_value, Quantity) or isinstance(right_value, Quantity):
+            if not isinstance(left_value, Quantity) or not isinstance(right_value, Quantity):
+                raise errors.EvaluationError('data type mismatch (not a quantity value)')
+            # the Quantity value type enforces compatible dimensions and performs the unit conversion
+            return left_value - right_value
         if isinstance(left_value, datetime.datetime):
             if not isinstance(right_value, (datetime.datetime, datetime.timedelta)):
                 raise errors.EvaluationError('data type mismatch (not a datetime or timedelta value)')
@@ -127,25 +165,76 @@ class SubtractExpression(BinaryExpressionBase):
 
 class ArithmeticExpression(BinaryExpressionBase):
     """A class for representing arithmetic expressions from the grammar text such as multiplication and division."""
-    compatible_types: tuple[_DataTypeDef, ...] = (DataType.FLOAT,)
+    compatible_types: tuple[_DataTypeDef, ...] = (DataType.FLOAT, DataType.QUANTITY)
     result_type: _DataTypeDef = DataType.FLOAT
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super(ArithmeticExpression, self).__init__(*args, **kwargs)
         _assert_not_nullable(self.left.result_type, role='left arithmetic operand')
         _assert_not_nullable(self.right.result_type, role='right arithmetic operand')
+        left_type, right_type = self.left.result_type, self.right.result_type
+        if left_type != DataType.UNDEFINED and right_type != DataType.UNDEFINED:
+            left_is_quantity = _is_quantity_type(left_type)
+            right_is_quantity = _is_quantity_type(right_type)
+            if left_is_quantity or right_is_quantity:
+                if left_is_quantity and right_is_quantity:
+                    _assert_quantities_compatible(left_type, right_type)
+                    if self.type in ('tdiv', 'fdiv'):
+                        # the ratio of two quantities is dimensionless
+                        self.result_type = DataType.FLOAT
+                    elif self.type == 'mod':
+                        self.result_type = _quantity_result_type(left_type, right_type)
+                    else:
+                        raise errors.EvaluationError('data type mismatch (two quantities can not be multiplied or exponentiated)')
+                elif left_is_quantity:
+                    if right_type != DataType.FLOAT:
+                        raise errors.EvaluationError('data type mismatch (a quantity can only be combined with a number)')
+                    if self.type == 'pow':
+                        raise errors.EvaluationError('data type mismatch (a quantity can not be exponentiated)')
+                    self.result_type = _quantity_result_type(left_type, right_type)
+                else:
+                    if self.type != 'mul':
+                        raise errors.EvaluationError('data type mismatch (a quantity may only be scaled by multiplication)')
+                    self.result_type = _quantity_result_type(left_type, right_type)
 
     def __op_arithmetic(self, op: Callable[[Any, Any], Any], thing: Any) -> Any:
         left_value = self.left.evaluate(thing)
-        _assert_is_numeric(left_value)
         right_value = self.right.evaluate(thing)
-        _assert_is_numeric(right_value)
         try:
-            result = op(left_value, right_value)
+            if isinstance(left_value, Quantity) or isinstance(right_value, Quantity):
+                result = self.__op_arithmetic_quantity(op, left_value, right_value)
+            else:
+                _assert_is_numeric(left_value)
+                _assert_is_numeric(right_value)
+                result = op(left_value, right_value)
         except ZeroDivisionError:
             raise errors.ArithmeticError('arithmetic error: division by zero') from None
         except ArithmeticError:
             raise errors.ArithmeticError('arithmetic error') from None
         return result
+
+    def __op_arithmetic_quantity(self, op: Callable[[Any, Any], Any], left_value: Any, right_value: Any) -> Any:
+        if isinstance(left_value, Quantity) and isinstance(right_value, Quantity):
+            if op in (operator.mul, operator.pow):
+                raise errors.EvaluationError('data type mismatch (two quantities can not be multiplied or exponentiated)')
+            left_value._check_compatible(right_value)
+            right_value = right_value.to(left_value.unit)
+            if op in (operator.truediv, operator.floordiv):
+                # the ratio of two quantities is a dimensionless number
+                return op(left_value.value, right_value.value)
+            # modulo keeps the unit of the left operand
+            return Quantity(op(left_value.value, right_value.value), left_value.unit)
+        elif isinstance(left_value, Quantity):
+            if op is operator.pow:
+                raise errors.EvaluationError('data type mismatch (a quantity can not be exponentiated)')
+            if not is_numeric(right_value):
+                raise errors.EvaluationError('data type mismatch (not a numeric value)')
+            if op is operator.mul:
+                return left_value.scale(right_value)
+            return Quantity(op(left_value.value, right_value), left_value.unit)
+        else:
+            if op is not operator.mul or not is_numeric(left_value):
+                raise errors.EvaluationError('data type mismatch (a quantity may only be scaled by multiplication)')
+            return right_value.scale(left_value)
 
     _op_fdiv = functools.partialmethod(__op_arithmetic, operator.floordiv)
     _op_tdiv = functools.partialmethod(__op_arithmetic, operator.truediv)

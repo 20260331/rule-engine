@@ -39,6 +39,11 @@ from .coercion import is_real_number
 from .datatype import DataType
 from .datatype import iterable_member_value_type
 
+from .quantity import Quantity
+from .quantity import Unit
+from .quantity import get_unit
+from .quantity import iter_units
+
 from .definitions import NoneType
 from .definitions import _ArrayDataTypeDef
 from .definitions import _CollectionDataTypeDef
@@ -46,16 +51,21 @@ from .definitions import _DataTypeDef
 from .definitions import _FunctionDataTypeDef
 from .definitions import _MappingDataTypeDef
 from .definitions import _NullableDataTypeDef
+from .definitions import _QuantityDataTypeDef
 from .definitions import _ReferenceDataTypeDef
 from ._object import _ObjectDataTypeDef
 
 __all__ = (
         'DataType',
         'NoneType',
+        'Quantity',
+        'Unit',
         'coerce_value',
+        'get_unit',
         'is_integer_number',
         'is_natural_number',
         'is_numeric',
         'is_real_number',
+        'iter_units',
         'iterable_member_value_type'
 )

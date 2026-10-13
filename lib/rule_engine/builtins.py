@@ -41,7 +41,7 @@ from typing import Any, Callable, Iterable, Iterator, Mapping
 
 from . import errors
 from . import types
-from .parser.utilities import parse_datetime, parse_float, parse_timedelta
+from .parser.utilities import parse_datetime, parse_float, parse_quantity, parse_timedelta
 
 import dateutil.tz
 
@@ -192,6 +192,7 @@ class Builtins(collections.abc.Mapping):
                 'filter': _builtin_filter,
                 'parse_datetime': BuiltinValueGenerator(_builtin_parse_datetime_generator),
                 'parse_float': parse_float,
+                'parse_quantity': parse_quantity,
                 'parse_timedelta': parse_timedelta,
                 'random': _builtin_random,
                 'range': _builtin_range,
@@ -216,6 +217,7 @@ class Builtins(collections.abc.Mapping):
                 'filter': types.DataType.FUNCTION('filter', return_type=types.DataType.ARRAY, argument_types=(types.DataType.FUNCTION, types.DataType.ARRAY)),
                 'parse_datetime': types.DataType.FUNCTION('parse_datetime', return_type=types.DataType.DATETIME, argument_types=(types.DataType.STRING,)),
                 'parse_float': types.DataType.FUNCTION('parse_float', return_type=types.DataType.FLOAT, argument_types=(types.DataType.STRING,)),
+                'parse_quantity': types.DataType.FUNCTION('parse_quantity', return_type=types.DataType.QUANTITY, argument_types=(types.DataType.STRING,)),
                 'parse_timedelta': types.DataType.FUNCTION('parse_timedelta', return_type=types.DataType.TIMEDELTA, argument_types=(types.DataType.STRING,)),
                 'random': types.DataType.FUNCTION('random', return_type=types.DataType.FLOAT, argument_types=(types.DataType.FLOAT,), minimum_arguments=0),
                 'range': types.DataType.FUNCTION('range', return_type=types.DataType.ARRAY(types.DataType.FLOAT), argument_types=(types.DataType.FLOAT, types.DataType.FLOAT, types.DataType.FLOAT,), minimum_arguments=1),

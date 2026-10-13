@@ -156,6 +156,21 @@ class TimedeltaSyntaxError(SyntaxError):
         self.value = value
         """The timedelta value which contains the syntax error which caused this exception to be raised."""
 
+class QuantitySyntaxError(SyntaxError):
+    """
+    An error raised for issues regarding the use of improperly formatted quantity expressions.
+
+    .. versionadded:: 5.1.0
+    """
+    def __init__(self, message: str, value: str) -> None:
+        """
+        :param str message: A text description of what error occurred.
+        :param str value: The quantity value which contains the syntax error which caused this exception to be raised.
+        """
+        super(QuantitySyntaxError, self).__init__(message)
+        self.value = value
+        """The quantity value which contains the syntax error which caused this exception to be raised."""
+
 class RegexSyntaxError(SyntaxError):
     """An error raised for issues regarding the use of improper regular expression syntax."""
     def __init__(self, message: str, error: re.error, value: str) -> None:
@@ -357,3 +372,25 @@ class ArithmeticError(EvaluationError):
 
     .. versionadded:: 5.0.0
     """
+
+class DimensionMismatchError(EvaluationError):
+    """
+    An error raised when an operation is attempted between two :py:class:`~rule_engine.types.Quantity` values of
+    incompatible dimensions (e.g. a time compared with an information size). This can occur at parse time while AST
+    nodes are being evaluated during the reduction phase, or at evaluation time for values whose type was not known
+    statically.
+
+    .. versionadded:: 5.1.0
+    """
+    def __init__(self, left_dimension: str, right_dimension: str) -> None:
+        """
+        :param str left_dimension: The dimension of the left hand value.
+        :param str right_dimension: The dimension of the right hand value.
+        """
+        self.left_dimension = left_dimension
+        """The dimension of the left hand value."""
+        self.right_dimension = right_dimension
+        """The dimension of the right hand value."""
+        super(DimensionMismatchError, self).__init__(
+                "data type mismatch (incompatible dimensions: {0} and {1})".format(left_dimension, right_dimension)
+        )

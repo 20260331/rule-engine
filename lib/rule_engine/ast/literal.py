@@ -34,9 +34,10 @@ import collections
 from typing import TYPE_CHECKING, Any, Iterable
 
 from .. import errors
-from ..parser.utilities import parse_datetime, parse_float, parse_timedelta
+from ..parser.utilities import parse_datetime, parse_float, parse_quantity, parse_timedelta
 from ..types import DataType, coerce_value
 from ..types import _DataTypeDef
+from ..types.quantity import Quantity
 
 from .base import ExpressionBase, LiteralExpressionBase, _is_reduced, _iterable_member_value_type
 
@@ -165,6 +166,23 @@ class NullExpression(LiteralExpressionBase):
         if value is not None:
             raise TypeError('value must be None')
         super(NullExpression, self).__init__(context, value=None)
+
+class QuantityExpression(LiteralExpressionBase):
+    """
+    Literal quantity expressions representing a dimensioned value such as ``30 s`` or ``1 KiB``.
+
+    .. versionadded:: 5.1.0
+    """
+    result_type: _DataTypeDef = DataType.QUANTITY
+    def __init__(self, context: 'Context', value: Quantity, **kwargs: Any) -> None:
+        # parameterize the static type with the quantity's concrete dimension so that operations are validated at
+        # parse time (the class-level QUANTITY sentinel represents an unknown dimension)
+        self.result_type = DataType.QUANTITY(value.dimension)
+        super(QuantityExpression, self).__init__(context, value, **kwargs)
+
+    @classmethod
+    def from_string(cls, context: 'Context', string: str) -> 'QuantityExpression':
+        return cls(context, parse_quantity(string))
 
 class SetExpression(_CollectionMixin, LiteralExpressionBase):  # type: ignore[override]
     """Literal set expressions containing 0 or more sub-expressions."""

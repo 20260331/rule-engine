@@ -45,11 +45,13 @@ from .definitions import (
         _MappingDataTypeDef,
         _NullableDataTypeDef,
         _PYTHON_FUNCTION_TYPE,
+        _QuantityDataTypeDef,
         _ReferenceDataTypeDef,
         _SetDataTypeDef,
         NoneType,
 )
 from ._object import _ObjectDataTypeDef
+from .quantity import Quantity
 
 def iterable_member_value_type(python_value: Any) -> _DataTypeDef:
     """
@@ -152,6 +154,13 @@ class DataType(metaclass=DataTypeMeta):
     NULL = _DataTypeDef('NULL', NoneType)
     NULLABLE = _NullableDataTypeDef('NULLABLE', object)
     OBJECT = _ObjectDataTypeDef('OBJECT', object)
+    QUANTITY = _QuantityDataTypeDef('QUANTITY', Quantity)
+    """
+    A dimensioned, precise quantity (e.g. ``30 s`` or ``1 KiB``). Parameterize with a dimension such as
+    ``DataType.QUANTITY('TIME')``; the bare constant represents a quantity whose dimension is not statically known.
+
+    .. versionadded:: 5.1.0
+    """
     SET = _SetDataTypeDef('SET', set)
     STRING = _DataTypeDef('STRING', str)
     TIMEDELTA = _DataTypeDef('TIMEDELTA', datetime.timedelta)
@@ -211,6 +220,8 @@ class DataType(metaclass=DataTypeMeta):
             return cls.DATETIME
         elif python_type is datetime.timedelta:
             return cls.TIMEDELTA
+        elif python_type is Quantity:
+            return cls.QUANTITY
         elif python_type in (decimal.Decimal, float, int):
             return cls.FLOAT
         elif python_type is dict:
@@ -256,6 +267,8 @@ class DataType(metaclass=DataTypeMeta):
             return cls.DATETIME
         elif isinstance(python_value, datetime.timedelta):
             return cls.TIMEDELTA
+        elif isinstance(python_value, Quantity):
+            return cls.QUANTITY(python_value.dimension)
         elif isinstance(python_value, (decimal.Decimal, float, int)):
             return cls.FLOAT
         elif python_value is None:
@@ -308,6 +321,12 @@ class DataType(metaclass=DataTypeMeta):
             inner2 = dt2.inner_type if isinstance(dt2, _NullableDataTypeDef) else dt2
             return cls.is_compatible(inner1, inner2)
         if dt1.is_scalar and dt2.is_scalar:
+            if DataType.is_type(dt1, DataType.QUANTITY) and DataType.is_type(dt2, DataType.QUANTITY):
+                # the dimension-less sentinel represents an as-yet-unknown dimension and is compatible with anything;
+                # concrete dimensions must match (e.g. TIME may not be compared with INFORMATION)
+                if dt1.dimension is None or dt2.dimension is None:
+                    return True
+                return dt1.dimension == dt2.dimension
             if DataType.is_type(dt1, DataType.FUNCTION) and DataType.is_type(dt2, DataType.FUNCTION):
                 if not cls.is_compatible(dt1.return_type, dt2.return_type):
                     return False
@@ -369,6 +388,9 @@ class DataType(metaclass=DataTypeMeta):
     @classmethod
     @overload
     def is_type(cls, dt: _DataTypeDef, kind: _ObjectDataTypeDef) -> TypeGuard[_ObjectDataTypeDef]: ...
+    @classmethod
+    @overload
+    def is_type(cls, dt: _DataTypeDef, kind: _QuantityDataTypeDef) -> TypeGuard[_QuantityDataTypeDef]: ...
     @classmethod
     @overload
     def is_type(cls, dt: _DataTypeDef, kind: _SetDataTypeDef) -> TypeGuard[_SetDataTypeDef]: ...

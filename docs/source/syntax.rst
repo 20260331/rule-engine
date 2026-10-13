@@ -29,19 +29,25 @@ The following table outlines all operators that can be used in Rule Engine expre
 | ``+``        | Addition                     | :py:attr:`~.DataType.BYTES`, :py:attr:`~.DataType.DATETIME`,    |
 |              |                              | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.STRING`,      |
 |              |                              | :py:attr:`~.DataType.TIMEDELTA` :sup:`1`                        |
+|              |                              | :py:attr:`~.DataType.QUANTITY` :sup:`6`                         |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``-``        | Subtraction                  | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.DATETIME`,    |
-|              |                              | :py:attr:`~.DataType.TIMEDELTA`                                 |
+|              |                              | :py:attr:`~.DataType.TIMEDELTA`,                                |
+|              |                              | :py:attr:`~.DataType.QUANTITY` :sup:`6`                         |
 +--------------+------------------------------+-----------------------------------------------------------------+
-| ``*``        | Multiplication               | :py:attr:`~.DataType.FLOAT`                                     |
+| ``*``        | Multiplication               | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.QUANTITY`     |
+|              |                              | :sup:`6`                                                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``**``       | Exponent                     | :py:attr:`~.DataType.FLOAT`                                     |
 +--------------+------------------------------+-----------------------------------------------------------------+
-| ``/``        | True division                | :py:attr:`~.DataType.FLOAT`                                     |
+| ``/``        | True division                | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.QUANTITY`     |
+|              |                              | :sup:`6`                                                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
-| ``//``       | Floor division               | :py:attr:`~.DataType.FLOAT`                                     |
+| ``//``       | Floor division               | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.QUANTITY`     |
+|              |                              | :sup:`6`                                                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
-| ``%``        | Modulo                       | :py:attr:`~.DataType.FLOAT`                                     |
+| ``%``        | Modulo                       | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.QUANTITY`     |
+|              |                              | :sup:`6`                                                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | **Bitwise-Arithmetic Operators**                                                                              |
 +--------------+------------------------------+-----------------------------------------------------------------+
@@ -67,24 +73,28 @@ The following table outlines all operators that can be used in Rule Engine expre
 |              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.TIMEDELTA`,|
 |              |                              | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.NULL`,        |
 |              |                              | :py:attr:`~.DataType.STRING`                                    |
+|              |                              | :py:attr:`~.DataType.QUANTITY` :sup:`6`                         |
 |              |                              | :sup:`3`                                                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``>=``       | Greater than or equal to     | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BOOLEAN`,     |
 |              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.TIMEDELTA`,|
 |              |                              | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.NULL`,        |
 |              |                              | :py:attr:`~.DataType.STRING`                                    |
+|              |                              | :py:attr:`~.DataType.QUANTITY` :sup:`6`                         |
 |              |                              | :sup:`3`                                                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``<``        | Less than                    | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BOOLEAN`,     |
 |              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.TIMEDELTA`,|
 |              |                              | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.NULL`,        |
 |              |                              | :py:attr:`~.DataType.STRING`                                    |
+|              |                              | :py:attr:`~.DataType.QUANTITY` :sup:`6`                         |
 |              |                              | :sup:`3`                                                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``<=``       | Less than or equal to        | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BOOLEAN`,     |
 |              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.TIMEDELTA`,|
 |              |                              | :py:attr:`~.DataType.FLOAT`, :py:attr:`~.DataType.NULL`,        |
 |              |                              | :py:attr:`~.DataType.STRING`                                    |
+|              |                              | :py:attr:`~.DataType.QUANTITY` :sup:`6`                         |
 |              |                              | :sup:`3`                                                        |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | **Fuzzy-Comparison Operators**                                                                                |
@@ -121,13 +131,14 @@ The following table outlines all operators that can be used in Rule Engine expre
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``.``        | Attribute access             | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BYTES`,       |
 |              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.MAPPING`,  |
-|              |                              | :py:attr:`~.DataType.SET`, :py:attr:`~.DataType.STRING`,        |
-|              |                              | :py:attr:`~.DataType.TIMEDELTA`                                 |
+|              |                              | :py:attr:`~.DataType.QUANTITY`, :py:attr:`~.DataType.SET`,      |
+|              |                              | :py:attr:`~.DataType.STRING`, :py:attr:`~.DataType.TIMEDELTA`   |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``&.``       | Safe attribute access        | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BYTES`,       |
 |              |                              | :py:attr:`~.DataType.DATETIME`, :py:attr:`~.DataType.MAPPING`,  |
-|              |                              | :py:attr:`~.DataType.NULL`, :py:attr:`~.DataType.SET`,          |
-|              |                              | :py:attr:`~.DataType.STRING`, :py:attr:`~.DataType.TIMEDELTA`   |
+|              |                              | :py:attr:`~.DataType.NULL`, :py:attr:`~.DataType.QUANTITY`,     |
+|              |                              | :py:attr:`~.DataType.SET`, :py:attr:`~.DataType.STRING`,        |
+|              |                              | :py:attr:`~.DataType.TIMEDELTA`                                 |
 +--------------+------------------------------+-----------------------------------------------------------------+
 | ``[``        | Item lookup                  | :py:attr:`~.DataType.ARRAY`, :py:attr:`~.DataType.BYTES`,       |
 |              |                              | :py:attr:`~.DataType.MAPPING`, :py:attr:`~.DataType.STRING`     |
@@ -162,6 +173,14 @@ precedence table — tighter than ``not`` / ``and`` / ``or`` / ``?`` ``:``, loos
 comparison operators. ``a or b ?? c`` parses as ``a or (b ?? c)``, ``cond ? a ?? b : c`` puts the coalesce on the
 true branch, and ``a ?? b ?? c`` is right-associative as ``a ?? (b ?? c)``. Mixing with ``==`` requires explicit
 parentheses — ``(name ?? '') == 'x'``.
+
+:sup:`6` Arithmetic and ordering comparisons with :py:attr:`~.DataType.QUANTITY` values are permitted only between
+quantities of the same *dimension* (e.g. two times, or two information sizes); units within a dimension are converted
+automatically. Adding or subtracting two quantities keeps the dimension, while dividing one quantity by another of the
+same dimension yields a dimensionless :py:attr:`~.DataType.FLOAT` ratio. A quantity may additionally be scaled by
+multiplication and division with a plain :py:attr:`~.DataType.FLOAT` (e.g. ``30s * 2``). Mixing dimensions, or comparing
+a quantity with a plain number, raises a :py:class:`~rule_engine.errors.DimensionMismatchError` (or
+:py:class:`~rule_engine.errors.EvaluationError`) — see :ref:`literal-quantity-values`.
 
 Accessor Operators
 """"""""""""""""""
@@ -300,6 +319,9 @@ difference comes in an optional leading character before the opening quote. Eith
 :py:attr:`~.DataType.STRING` value in which backslashes are treated literally, while a single ``d`` will specify a
 :py:attr:`~.DataType.DATETIME` value, and a single ``t`` will specify a :py:attr:`~.DataType.TIMEDELTA` value.
 
+:py:attr:`~.DataType.QUANTITY` values use a different, suffix-based syntax and are described in
+:ref:`literal-quantity-values` below.
+
 Raw string literals (``r'...'`` / ``r"..."``) are useful when writing values that contain backslashes such as regular
 expressions or Windows-style paths. In a raw string, ``\`` is always a literal backslash — no escape sequences are
 processed. For example, ``r'\w+'`` is a four character string identical to ``'\\w+'``. As in Python, a backslash
@@ -368,6 +390,57 @@ Example rules showing equivalent literal expressions:
 
 * ``t"P1D" == t"PT24H"`` (24 hours in a day)
 * ``t"P1D" == t"PT1440M"`` (1,440 minutes in a day)
+
+.. _literal-quantity-values:
+
+Literal QUANTITY Values
+"""""""""""""""""""""""
+
+.. versionadded:: 5.1.0
+
+:py:attr:`~.DataType.QUANTITY` literals represent a precise, dimensioned value such as a duration or an information
+size. They are written as a decimal number (the same syntax as a :py:attr:`~.DataType.FLOAT` literal, including decimal
+places and scientific notation) immediately followed by a unit symbol with no whitespace in between:
+
++---------+-------------+--------------------------------------+
+| Symbol  | Unit        | Dimension                            |
++=========+=============+======================================+
+| ``s``   | second      | ``TIME`` (base unit)                 |
+| ``ms``  | millisecond | ``TIME`` (``1 ms = 0.001 s``)        |
+| ``B``   | byte        | ``INFORMATION`` (base unit)          |
+| ``KiB`` | kibibyte    | ``INFORMATION`` (``1 KiB = 1024 B``) |
++---------+-------------+--------------------------------------+
+
+Example rules showing equivalent literal expressions:
+
+* ``1s == 1000ms``
+* ``1KiB == 1024B``
+* ``1500ms > 1s``
+* ``2.5KiB == 2560B``
+* ``1e3ms == 1s``
+
+Quantities are backed by :py:class:`~decimal.Decimal`, so conversion and arithmetic keep the precise decimal semantics
+of :py:attr:`~.DataType.FLOAT` values. Quantities of the same dimension can be compared, added and subtracted using
+different units — the conversion happens automatically (addition and subtraction express their result in the unit of
+the left operand). A quantity can be scaled by multiplication or division with a number (e.g. ``30s * 2``), and
+dividing two quantities of the same dimension yields a dimensionless :py:attr:`~.DataType.FLOAT` ratio (e.g.
+``1KiB / 512B == 2``). The attributes ``seconds`` and ``milliseconds`` (on times) as well as ``bytes`` and
+``kibibytes`` (on information sizes) convert a quantity to a plain :py:attr:`~.DataType.FLOAT` value, for example
+``1500ms.seconds`` evaluates to ``1.5``.
+
+Mixing dimensions — such as comparing a duration against an information size — always raises an exception, either
+while the rule is parsed when the dimensions are known statically, or while the rule is evaluated for values whose
+type could not be determined ahead of time. Comparing a quantity to a plain, unit-less number raises as well, so a
+rule that confuses seconds with milliseconds or bytes with kibibytes can never silently evaluate to the wrong result.
+An improperly formatted literal raises :py:class:`~rule_engine.errors.QuantitySyntaxError`, and an operation between
+incompatible dimensions raises :py:class:`~rule_engine.errors.DimensionMismatchError`.
+
+Example rules with invalid, rejected expressions:
+
+* ``1s == 1B`` (different dimensions)
+* ``500ms + 1KiB`` (different dimensions)
+* ``latency > 100`` (quantity compared with a plain number)
+* ``1m`` (``m`` is not a supported unit)
 
 Comments
 ^^^^^^^^
@@ -465,6 +538,18 @@ fails to parse, a :py:exc:`~.errors.DatetimeSyntaxError` is raised.
 
 Parses the string value into a :py:attr:`~.DataType.FLOAT` value. The string must be properly formatted and if it
 fails to parse, a :py:exc:`~.errors.FloatSyntaxError` is raised.
+
+.. versionadded:: 5.1.0
+
+``parse_quantity(STRING value) -> QUANTITY``
+
+:returns: :py:attr:`~.DataType.QUANTITY`
+:value: (:py:attr:`~.DataType.STRING`) The string value to parse into a dimensioned quantity (e.g. ``"30s"``).
+
+Parses the string value into a :py:attr:`~.DataType.QUANTITY` value using the same syntax as
+:ref:`quantity literals<literal-quantity-values>`. The string must be properly formatted and if it fails to parse, a
+:py:exc:`~.errors.QuantitySyntaxError` is raised. The dimension of the result is not known statically, so operations
+with the returned quantity are validated at evaluation time.
 
 ``parse_timedelta(STRING value) -> FLOAT``
 

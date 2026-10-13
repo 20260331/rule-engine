@@ -56,6 +56,7 @@ from .literal import (
         FunctionExpression,
         MappingExpression,
         NullExpression,
+        QuantityExpression,
         SetExpression,
         StringExpression,
         TimedeltaExpression,

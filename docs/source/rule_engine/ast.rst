@@ -159,6 +159,13 @@ Literal Expressions
    .. autoattribute:: result_type
       :annotation: = NULL
 
+.. autoclass:: QuantityExpression
+   :show-inheritance:
+   :members: from_string
+
+   .. autoattribute:: result_type
+      :annotation: = QUANTITY
+
 .. autoclass:: SetExpression
    :show-inheritance:
 

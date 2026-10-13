@@ -21,14 +21,24 @@ Functions
 
 .. autofunction:: is_real_number
 
+.. autofunction:: get_unit
+
+.. autofunction:: iter_units
+
 .. autofunction:: iterable_member_value_type
 
 Classes
 -------
 
+.. autoclass:: Quantity
+   :members:
+
+.. autoclass:: Unit
+   :members:
+
 .. autoclass:: DataType
    :members:
-   :exclude-members: ARRAY, MAPPING, SET, UNDEFINED
+   :exclude-members: ARRAY, MAPPING, QUANTITY, SET, UNDEFINED
    :show-inheritance:
 
    .. automethod:: ARRAY
@@ -55,6 +65,8 @@ Classes
    .. automethod:: NULLABLE
 
    .. automethod:: OBJECT
+
+   .. automethod:: QUANTITY
 
    .. py:method:: DataType.OBJECT.from_dataclass(name, cls, *, accessor=None)
       :staticmethod:
