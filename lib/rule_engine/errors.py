@@ -339,6 +339,25 @@ class SymbolTypeError(EvaluationError):
         )
         super(SymbolTypeError, self).__init__(message)
 
+class ParameterBindingError(EvaluationError):
+    """
+    An error raised when a value binding for a rule's declared parameters is invalid, either because it omits one or
+    more required parameters or because it provides values for parameters that were not declared.
+
+    .. versionadded:: 5.1.0
+    """
+    def __init__(self, message: str, missing: tuple[str, ...] = (), unexpected: tuple[str, ...] = ()) -> None:
+        """
+        :param str message: A text description of what error occurred.
+        :param tuple missing: The names of declared parameters for which no value was provided.
+        :param tuple unexpected: The names that are not declared parameters.
+        """
+        super(ParameterBindingError, self).__init__(message)
+        self.missing = missing
+        """The names of declared parameters for which no value was provided."""
+        self.unexpected = unexpected
+        """The names that are not declared parameters."""
+
 class FunctionCallError(EvaluationError):
     """
     An error raised when there is an issue calling a function.

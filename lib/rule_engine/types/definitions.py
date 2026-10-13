@@ -35,7 +35,7 @@ from __future__ import annotations
 import collections
 import collections.abc
 import warnings
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 
 from .. import errors
 
@@ -55,6 +55,26 @@ class _DataTypeDef(object):
         if '__call__' in dir(self) and self.__call__.__doc__:  # type: ignore[operator]
             # patch the call docs into the top-level class for Sphinx
             self.__class__.__doc__ = self.__call__.__doc__  # type: ignore[operator]
+
+    def __getstate__(self) -> dict[str, Any]:
+        # note: iterable_type is a read-only property on compound subclasses and must not be included
+        python_type = None if self.python_type is _PYTHON_FUNCTION_TYPE else self.python_type
+        return {'name': self.name, 'python_type': python_type, 'is_scalar': self.is_scalar}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.name = state['name']
+        self.python_type = state['python_type'] or _PYTHON_FUNCTION_TYPE
+        self.is_scalar = state['is_scalar']
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # instances exposed as canonical DataType constants (scalar singletons and the bare type constructors)
+        # pickle by reference so identity based comparisons keep working; parameterized definitions are rebuilt from
+        # their state without running __init__
+        from .datatype import DataType
+        canonical = getattr(DataType, self.name, None)
+        if canonical is self:
+            return (getattr, (DataType, self.name))
+        return (object.__new__, (self.__class__,), self.__getstate__())
 
     @property
     def is_iterable(self) -> bool:
@@ -121,6 +141,15 @@ class _NullableDataTypeDef(_DataTypeDef):
 
     def __repr__(self) -> str:
         return "<{} name={} inner_type={} >".format(self.__class__.__name__, self.name, self.inner_type.name)
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = super().__getstate__()
+        state['inner_type'] = self.inner_type
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self.inner_type = state['inner_type']
 
     def __eq__(self, other: object) -> bool:
         if not super().__eq__(other):
@@ -216,6 +245,15 @@ class _CollectionDataTypeDef(_DataTypeDef):
                 self.python_type.__name__,
                 self.value_type.name
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = super().__getstate__()
+        state['value_type'] = self.value_type
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self.value_type = state['value_type']
 
     def __eq__(self, other: object) -> bool:
         if not super().__eq__(other):
@@ -322,6 +360,17 @@ class _MappingDataTypeDef(_DataTypeDef):
                 self.value_type.name
         )
 
+    def __getstate__(self) -> dict[str, Any]:
+        state = super().__getstate__()
+        state['key_type'] = self.key_type
+        state['value_type'] = self.value_type
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self.key_type = state['key_type']
+        self.value_type = state['value_type']
+
     def __eq__(self, other: object) -> bool:
         if not super().__eq__(other):
             return False
@@ -399,6 +448,21 @@ class _FunctionDataTypeDef(_DataTypeDef):
                 self.python_type.__name__,
                 self.return_type.name
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = super().__getstate__()
+        state['value_name'] = self.value_name
+        state['return_type'] = self.return_type
+        state['argument_types'] = self.argument_types
+        state['minimum_arguments'] = self.minimum_arguments
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self.value_name = state['value_name']
+        self.return_type = state['return_type']
+        self.argument_types = state['argument_types']
+        self.minimum_arguments = state['minimum_arguments']
 
     def __eq__(self, other: object) -> bool:
         if not super().__eq__(other):

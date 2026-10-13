@@ -41,6 +41,57 @@ from ..base import ExpressionBase, LiteralExpressionBase, _is_reduced
 if TYPE_CHECKING:
     from ...engine.context import Context
 
+def verify_symbol_value_type(symbol_name: str, value: Any, result_type: _DataTypeDef) -> Any:
+    """
+    Check that *value* is compatible with the declared *result_type* of a typed symbol (a thing field or a rule
+    parameter), applying the same rules as :py:class:`SymbolExpression` at evaluation time. The value is returned
+    unchanged when it is compatible; otherwise :py:exc:`~rule_engine.errors.SymbolTypeError` is raised.
+
+    This is shared by symbol evaluation and by parameter binding validation so that a value rejected at evaluation
+    is also rejected when the binding is created.
+    """
+    # if the expected result type is undefined, return the value
+    if result_type == DataType.UNDEFINED:
+        return value
+
+    # NULLABLE(T) is T-or-None at runtime; None is always valid, and any other value is checked against the
+    # unwrapped inner type
+    effective_type: _DataTypeDef = result_type
+    if DataType.is_type(effective_type, DataType.NULLABLE):
+        if value is None:
+            return value
+        effective_type = effective_type.inner_type
+
+    # OBJECT values are opaque to DataType.from_value; trust the schema annotation and delegate attribute-level
+    # type checking to GetAttributeExpression
+    if DataType.is_type(effective_type, DataType.OBJECT):
+        return value
+
+    # use DataType.from_value to raise a TypeError if value is not of a
+    # compatible data type
+    value_type = DataType.from_value(value)
+
+    # if the type is the expected result type, return the value
+    if DataType.is_compatible(value_type, effective_type):
+        if effective_type.is_scalar:
+            return value
+        assert isinstance(effective_type, (_CollectionDataTypeDef, _MappingDataTypeDef))
+        assert isinstance(value_type, (_CollectionDataTypeDef, _MappingDataTypeDef))
+        if effective_type.value_type == DataType.UNDEFINED:
+            return value
+        if value_type.value_type == DataType.UNDEFINED:
+            return value
+        if effective_type.value_type != DataType.NULL and not effective_type.value_type_nullable and any(v is None for v in value):
+            raise errors.SymbolTypeError(symbol_name, is_value=value, is_type=value_type, expected_type=result_type)
+        if DataType.is_compatible(effective_type.value_type, value_type.value_type):
+            return value
+
+    # if the type is null, return the value (treat null as a special case)
+    if value_type == DataType.NULL:
+        return value
+
+    raise errors.SymbolTypeError(symbol_name, is_value=value, is_type=value_type, expected_type=result_type)
+
 class SymbolExpression(ExpressionBase):
     """
     A class representing a symbol name to be resolved at evaluation time with the help of a
@@ -75,48 +126,7 @@ class SymbolExpression(ExpressionBase):
                 raise
             value = default_value
         value = self._new_value(value, verify_type=False)
-
-        # if the expected result type is undefined, return the value
-        if self.result_type == DataType.UNDEFINED:
-            return value
-
-        # NULLABLE(T) is T-or-None at runtime; None is always valid, and any other value is checked against the
-        # unwrapped inner type
-        effective_type: _DataTypeDef = self.result_type
-        if DataType.is_type(effective_type, DataType.NULLABLE):
-            if value is None:
-                return value
-            effective_type = effective_type.inner_type
-
-        # OBJECT values are opaque to DataType.from_value; trust the schema annotation and delegate attribute-level
-        # type checking to GetAttributeExpression
-        if DataType.is_type(effective_type, DataType.OBJECT):
-            return value
-
-        # use DataType.from_value to raise a TypeError if value is not of a
-        # compatible data type
-        value_type = DataType.from_value(value)
-
-        # if the type is the expected result type, return the value
-        if DataType.is_compatible(value_type, effective_type):
-            if effective_type.is_scalar:
-                return value
-            assert isinstance(effective_type, (_CollectionDataTypeDef, _MappingDataTypeDef))
-            assert isinstance(value_type, (_CollectionDataTypeDef, _MappingDataTypeDef))
-            if effective_type.value_type == DataType.UNDEFINED:
-                return value
-            if value_type.value_type == DataType.UNDEFINED:
-                return value
-            if effective_type.value_type != DataType.NULL and not effective_type.value_type_nullable and any(v is None for v in value):
-                raise errors.SymbolTypeError(self.name, is_value=value, is_type=value_type, expected_type=self.result_type)
-            if DataType.is_compatible(effective_type.value_type, value_type.value_type):
-                return value
-
-        # if the type is null, return the value (treat null as a special case)
-        if value_type == DataType.NULL:
-            return value
-
-        raise errors.SymbolTypeError(self.name, is_value=value, is_type=value_type, expected_type=self.result_type)
+        return verify_symbol_value_type(self.name, value, self.result_type)
 
     def to_graphviz(self, digraph: Any, *args: Any, **kwargs: Any) -> None:
         digraph.node(str(id(self)), "{}\nname={!r}".format(self.__class__.__name__, self.name))

@@ -137,9 +137,22 @@ class _ObjectDataTypeDef(_DataTypeDef):
         # resolve self-references in the attribute schema now that self exists; cross-name references are left intact
         # and will be resolved lazily at rule parse time via Context.resolve_type
         for attr_name, attr_type in self.attributes.items():
-            if not isinstance(attr_type, _DataTypeDef):
-                raise TypeError("object {0} attribute {1!r} has an invalid type: {2!r}".format(self.name, attr_name, attr_type))
-            self.attributes[attr_name] = _substitute_self_references(attr_type, self)
+                if not isinstance(attr_type, _DataTypeDef):
+                    raise TypeError("object {0} attribute {1!r} has an invalid type: {2!r}".format(self.name, attr_name, attr_type))
+                self.attributes[attr_name] = _substitute_self_references(attr_type, self)
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = super().__getstate__()
+        state['attributes'] = self.attributes
+        state['accessor'] = self.accessor
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        # state is restored verbatim (without re-running _substitute_self_references); self references in a built
+        # schema were already resolved at construction time
+        self.attributes = dict(state['attributes'])
+        self.accessor = state['accessor']
 
     def __call__(
             self,

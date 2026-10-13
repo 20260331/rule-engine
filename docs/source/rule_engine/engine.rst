@@ -33,3 +33,9 @@ Classes
    :show-inheritance:
    :special-members: __init__
    :undoc-members:
+
+.. autoclass:: RuleBinding
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+   :undoc-members:

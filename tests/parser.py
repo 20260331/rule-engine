@@ -182,6 +182,28 @@ class ParserTests(ParserTestsBase):
             self.assertEqual(expression.name, text)
             self.assertEqual(expression.scope, 'built-in')
 
+    def test_parser_parameter_expressions(self):
+        # @name is lexed and scoped independently of thing symbols, builtins and comprehension variables
+        with self.context.parameter_declarations({'limit': types.DataType.FLOAT}):
+            expression = self.assertStatementType('@limit', ast.SymbolExpression).expression
+            self.assertEqual(expression.name, 'limit')
+            self.assertEqual(expression.scope, 'parameter')
+            self.assertEqual(expression.result_type, types.DataType.FLOAT)
+
+            expression = self.assertStatementType('limit >= @limit', ast.ArithmeticComparisonExpression).expression
+            self.assertIsNone(expression.left.scope)
+            self.assertEqual(expression.right.scope, 'parameter')
+
+    def test_parser_undeclared_parameter_raises(self):
+        with self.assertRaises(errors.SymbolResolutionError) as context:
+            self._parse('@missing', self.context)
+        self.assertEqual(context.exception.symbol_name, 'missing')
+        self.assertEqual(context.exception.symbol_scope, 'parameter')
+
+    def test_parser_invalid_parameter_syntax(self):
+        with self.assertRaises(errors.RuleSyntaxError):
+            self._parse('@', self.context)
+
     def test_parser_ternary_expressions(self):
         statement = self.assertStatementType('condition ? case_true : case_false', ast.TernaryExpression)
         self.assertIsInstance(statement.expression.condition, ast.SymbolExpression)

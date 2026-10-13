@@ -377,6 +377,49 @@ will be ignored.
 
 Example rule containing a comment: ``size == 1 # this is a comment``
 
+.. _rule-parameters:
+
+Rule Parameters
+---------------
+Rather than concatenating thresholds and allowed sets directly into the rule text (which requires re-parsing the rule
+for each set of values and loses the type boundary), rules can declare independent, typed **parameters**. Parameters
+are referenced in the rule text with the ``@`` prefix, e.g. ``@min_age``. This keeps them in their own namespace so
+they can never be confused with *thing* fields, array-comprehension variables (which use plain names) or built-in
+symbols (which use the ``$`` prefix), even when names happen to match.
+
+Parameters are declared when the :py:class:`~engine.Rule` is created through the *params* argument. Each parameter is
+given a :py:class:`~.DataType` definition (or a Python type / type hint), allowing the rule to be parsed and type
+checked exactly once. Concrete values are supplied later through :py:meth:`~engine.Rule.bind`, which returns a
+:py:class:`~engine.RuleBinding` reusing the already parsed rule. Every declared parameter must be bound; binding a
+missing parameter raises :py:exc:`~errors.ParameterBindingError`, and a value that is not compatible with the declared
+type raises :py:exc:`~errors.SymbolTypeError`.
+
+Bindings are immutable and fully isolated — a parameter bound in one binding can never be observed by another, even
+when bindings are evaluated concurrently from multiple threads.
+
+.. code-block:: python
+
+   import rule_engine
+
+   # the rule is parsed a single time with typed parameter declarations
+   rule = rule_engine.Rule(
+           'age >= @min_age and group in @allowed_groups',
+           params={
+                   'min_age': rule_engine.DataType.FLOAT,
+                   'allowed_groups': rule_engine.DataType.SET(rule_engine.DataType.STRING),
+           }
+   )
+
+   adults = rule.bind(min_age=18, allowed_groups={'staff', 'vip'})
+   seniors = rule.bind({'min_age': 65, 'allowed_groups': {'senior'}})
+
+   adults.matches({'age': 20, 'group': 'staff'})   # => True
+   seniors.matches({'age': 20, 'group': 'staff'})  # => False
+
+Parameter names must be valid identifiers and can not collide with reserved keywords (see below) or the names of
+built-in symbols. Referencing an ``@name`` that was not declared raises a :py:exc:`~errors.SymbolResolutionError`
+while the rule is being parsed.
+
 .. py:currentmodule:: rule_engine
 
 .. _builtin-symbols:

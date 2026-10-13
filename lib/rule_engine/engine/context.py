@@ -52,6 +52,9 @@ from ._attribute_resolver import _AttributeResolver
 
 import dateutil.tz
 
+#: The identity name of the scope for rule parameters referenced through the ``@`` prefix in rule text.
+PARAMETER_SCOPE = 'parameter'
+
 def _tls_getter(thread_local: threading.local, key: str, _builtins: Any) -> Any:
     # a function stub to be used with functools.partial for retrieving thread-local values
     return getattr(thread_local.storage, key)
@@ -206,15 +209,21 @@ class _ThreadLocalStorage(object):
     if a context is used by one or more rules that are being evaluated simultaneously in multiple threads, that the
     states are kept isolated.
     """
-    __slots__ = ('assignment_scopes', 'regex_groups')
+    __slots__ = ('assignment_scopes', 'parameter_type_scopes', 'parameter_value_scopes', 'regex_groups')
     assignment_scopes: 'collections.deque[dict[str, ast.Assignment]]'
+    parameter_type_scopes: 'collections.deque[dict[str, _DataTypeDef]]'
+    parameter_value_scopes: 'collections.deque[dict[str, Any]]'
     regex_groups: tuple[str, ...] | None
     def __init__(self) -> None:
         self.assignment_scopes = collections.deque()
+        self.parameter_type_scopes = collections.deque()
+        self.parameter_value_scopes = collections.deque()
         self.regex_groups = None
 
     def reset(self) -> None:
         self.assignment_scopes.clear()
+        self.parameter_type_scopes.clear()
+        self.parameter_value_scopes.clear()
         self.regex_groups = None
 
 class Context(object):
@@ -355,6 +364,33 @@ class Context(object):
         finally:
             self._tls.assignment_scopes.pop()
 
+    @contextlib.contextmanager
+    def parameter_declarations(self, parameters: collections.abc.Mapping[str, _DataTypeDef]) -> Iterator[None]:
+        """
+        Make the specified typed parameter *declarations* available to :py:meth:`.resolve_type` for the duration of the
+        block. This is used while a rule with declared parameters is being parsed. Like :py:meth:`.assignments`, the
+        declarations are kept in thread-specific storage so contexts can be shared between rules parsed concurrently in
+        multiple threads.
+        """
+        self._tls.parameter_type_scopes.append(dict(parameters))
+        try:
+            yield
+        finally:
+            self._tls.parameter_type_scopes.pop()
+
+    @contextlib.contextmanager
+    def parameter_values(self, values: collections.abc.Mapping[str, Any]) -> Iterator[None]:
+        """
+        Make the specified parameter *values* available to :py:meth:`.resolve` for the duration of the block. This is
+        used when a rule with declared parameters is evaluated through a binding. The values are kept in thread-specific
+        storage so separate bindings — and separate threads — can never leak state into one another.
+        """
+        self._tls.parameter_value_scopes.append(dict(values))
+        try:
+            yield
+        finally:
+            self._tls.parameter_value_scopes.pop()
+
     @property
     def _tls(self) -> _ThreadLocalStorage:
         if not hasattr(self._thread_local, 'storage'):
@@ -381,12 +417,30 @@ class Context(object):
             thing = self.builtins
         if isinstance(thing, builtins.Builtins):
             return resolve_item(thing, name)
+        if scope == PARAMETER_SCOPE:
+            for parameters in reversed(self._tls.parameter_value_scopes):
+                if name in parameters:
+                    return parameters[name]
+            raise errors.SymbolResolutionError(
+                    name,
+                    symbol_scope=PARAMETER_SCOPE,
+                    thing=thing,
+                    suggestion=self._suggest_parameter(name)
+            )
         if scope is None:
             for assignments in self._tls.assignment_scopes:
                 if name in assignments:
                     return assignments[name].value
             return self.__resolver(thing, name)
         raise errors.SymbolResolutionError(name, symbol_scope=scope, thing=thing)
+
+    def _suggest_parameter(self, name: str) -> str | None:
+        known: set[str] = set()
+        for parameters in self._tls.parameter_type_scopes:
+            known.update(parameters.keys())
+        for parameters in self._tls.parameter_value_scopes:
+            known.update(parameters.keys())
+        return suggest_symbol(name, known) if known else None
 
     __resolve_attribute = _AttributeResolver()
     def resolve_attribute(self, thing: Any, object_: Any, name: str) -> Any:
@@ -431,6 +485,15 @@ class Context(object):
         """
         if scope == builtins.Builtins.scope_name:
             return self.builtins.resolve_type(name)
+        if scope == PARAMETER_SCOPE:
+            for parameters in reversed(self._tls.parameter_type_scopes):
+                if name in parameters:
+                    return parameters[name]
+            raise errors.SymbolResolutionError(
+                    name,
+                    symbol_scope=PARAMETER_SCOPE,
+                    suggestion=self._suggest_parameter(name)
+            )
         for assignments in self._tls.assignment_scopes:
             if name in assignments:
                 value_type = assignments[name].value_type

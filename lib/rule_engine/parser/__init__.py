@@ -130,7 +130,7 @@ class Parser(ParserBase):
             'if': 'IF'
     }
     tokens = (
-            'BYTES', 'DATETIME', 'TIMEDELTA', 'FLOAT', 'STRING', 'SYMBOL',
+            'BYTES', 'DATETIME', 'TIMEDELTA', 'FLOAT', 'STRING', 'SYMBOL', 'PARAMETER',
             'LPAREN', 'RPAREN', 'QMARK', 'COLON', 'COMMA',
             'LBRACKET', 'RBRACKET', 'LBRACE', 'RBRACE', 'COMMENT'
     ) + tuple(set(list(reserved_words.values()) + list(op_names.values())))
@@ -262,6 +262,10 @@ class Parser(ParserBase):
         if t.value in ('elif', 'else', 'while'):
             raise errors.RuleSyntaxError("syntax error (the {} keyword is reserved for future use)".format(t.value))
         t.type = self.reserved_words.get(t.value, 'SYMBOL')
+        return t
+
+    def t_PARAMETER(self, t: Any) -> Any:
+        r'@[a-zA-Z_][a-zA-Z0-9_]*'
         return t
 
     def t_COMMENT(self, t: Any) -> Any:
@@ -426,11 +430,19 @@ class Parser(ParserBase):
         p[0] = _DeferredAstNode(ast.UnaryExpression, args=(self.context, 'NOT', p[2]))
 
     def p_expression_symbol(self, p: Any) -> None:
-        'object : SYMBOL'
+        """
+        object : SYMBOL
+               | PARAMETER
+        """
         name = p[1]
         scope = None
         if name[0] == '$':
             scope = 'built-in'
+            name = name[1:]
+        elif name[0] == '@':
+            # parameters live in their own scope so they can never be confused with thing fields, assignment
+            # (comprehension) variables or built-in symbols
+            scope = 'parameter'
             name = name[1:]
         p[0] = _DeferredAstNode(ast.SymbolExpression, args=(self.context, name), kwargs={'scope': scope})
 

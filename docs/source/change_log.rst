@@ -7,6 +7,29 @@ this list is curated by the development team for note worthy changes.
 Version 5.x.x
 -------------
 
+* Added typed, reusable rule parameters. A :py:class:`~rule_engine.engine.Rule` can now declare parameters with the
+  new keyword-only *params* argument and reference them in rule text through the ``@`` prefix (e.g. ``@min_age``).
+  Parameters live in their own scope so they can never be confused with *thing* fields, array-comprehension variables
+  or the ``$`` prefixed built-in symbols, and their names are validated against reserved keywords and built-in names
+  at declaration time. Concrete values are supplied through the new :py:meth:`~rule_engine.engine.Rule.bind` method,
+  which returns a :py:class:`~rule_engine.engine.RuleBinding` that reuses the single parsed statement; the rule text
+  no longer needs to be rebuilt for different thresholds or allowed sets.
+
+    * Parameter types participate in parse-time type checking just like declared *thing* symbols.
+    * Every declared parameter must receive a value; omissions and unknown names raise
+      :py:exc:`~rule_engine.errors.ParameterBindingError`, and incompatible values raise
+      :py:exc:`~rule_engine.errors.SymbolTypeError` when the binding is created.
+    * Bindings are immutable and isolated from one another: values are copied at bind time and installed only on the
+      context's thread-specific storage for the duration of an evaluation, so separate bindings — including bindings
+      evaluated concurrently across threads — never leak state.
+    * :py:meth:`~rule_engine.engine.Rule.is_valid` accepts the new *params* argument, and parameterized rules (and
+      bindings) remain serializable with :py:mod:`pickle`.
+* Compound data type definitions (:py:attr:`~rule_engine.types.DataType.ARRAY`, :py:attr:`~rule_engine.types.DataType.SET`,
+  :py:attr:`~rule_engine.types.DataType.MAPPING`, :py:attr:`~rule_engine.types.DataType.NULLABLE`,
+  :py:attr:`~rule_engine.types.DataType.FUNCTION` and :py:attr:`~rule_engine.types.DataType.OBJECT`) and their member
+  types are now serializable with :py:mod:`pickle`; scalar constants (such as :py:attr:`~rule_engine.types.DataType.STRING`)
+  keep their singleton identity through a pickle round-trip.
+
 Version 5.0.0
 ^^^^^^^^^^^^^
 

@@ -67,6 +67,11 @@ Exceptions
 .. autoexception:: MappingAttributeLookupDeprecation
    :show-inheritance:
 
+.. autoexception:: ParameterBindingError
+   :members:
+   :show-inheritance:
+   :special-members: __init__
+
 .. autoexception:: ObjectAttributeError
    :members:
    :show-inheritance:
@@ -121,6 +126,7 @@ The class hierarchy for Rule Engine exceptions is:
          +-- AttributeTypeError
          +-- FunctionCallError
          +-- LookupError
+         +-- ParameterBindingError
          +-- SymbolResolutionError
          +-- SymbolTypeError
     +-- SyntaxError

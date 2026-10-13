@@ -39,6 +39,7 @@ import unittest
 import rule_engine.ast as ast
 import rule_engine.engine as engine
 import rule_engine.errors as errors
+import rule_engine.types as types
 
 __all__ = ('ThreadSafetyTests',)
 
@@ -79,6 +80,36 @@ class ThreadSafetyTests(unittest.TestCase):
         self.assertEqual(context._tls.regex_groups, ('MainThread',))
         RuleThread(rule, {'words': 'AlternateThread Test'}).join()
         self.assertEqual(context._tls.regex_groups, ('MainThread',))
+
+    def test_tls_for_rule_bindings(self):
+        # two bindings sharing one rule (and therefore one context and statement) must stay isolated when
+        # evaluated concurrently from multiple threads
+        context = engine.Context()
+        rule = engine.Rule('age >= @min_age', context=context, params={'min_age': types.DataType.FLOAT})
+        low = rule.bind(min_age=1)
+        high = rule.bind(min_age=100)
+
+        class BindingThread(threading.Thread):
+            def __init__(self, binding, thing, expected):
+                self.binding = binding
+                self.thing = thing
+                self.expected = expected
+                self.queue = queue.Queue()
+                super(BindingThread, self).__init__()
+                self.start()
+            def run(self):
+                for _ in range(100):
+                    self.queue.put(self.binding.matches(self.thing))
+            def join(self, *args, **kwargs):
+                super(BindingThread, self).join(*args, **kwargs)
+                results = [self.queue.get() for _ in range(100)]
+                return results
+
+        low_thread = BindingThread(low, {'age': 50}, True)
+        high_thread = BindingThread(high, {'age': 50}, False)
+        self.assertTrue(all(low_thread.join()))
+        self.assertFalse(any(high_thread.join()))
+        self.assertEqual(len(context._tls.parameter_value_scopes), 0)
 
     def test_tls_for_regex2(self):
         lock = threading.RLock()

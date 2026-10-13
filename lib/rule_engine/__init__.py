@@ -39,12 +39,15 @@ from .engine import type_resolver_from_dict
 from .engine import type_resolver_from_sqlalchemy
 from .engine import Context
 from .engine import Rule
+from .engine import RuleBinding
 
 from .errors import AttributeResolutionError
 from .errors import EngineError
 from .errors import EvaluationError
+from .errors import ParameterBindingError
 from .errors import RuleSyntaxError
 from .errors import SymbolResolutionError
+from .errors import SymbolTypeError
 
 from .types import DataType
 
@@ -54,9 +57,12 @@ __all__ = (
     'DataType',
     'EngineError',
     'EvaluationError',
+    'ParameterBindingError',
     'Rule',
+    'RuleBinding',
     'RuleSyntaxError',
     'SymbolResolutionError',
+    'SymbolTypeError',
     'resolve_attribute',
     'resolve_item',
     'type_resolver_from_dataclass',

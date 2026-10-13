@@ -35,6 +35,7 @@ import dataclasses
 import datetime
 import decimal
 import enum
+import pickle
 import sys
 import typing
 import unittest
@@ -94,6 +95,31 @@ class DataTypeTests(unittest.TestCase):
         self.assertEqual(dt1, DataType.SET(DataType.STRING))
         self.assertNotEqual(dt1, DataType.SET)
         self.assertNotEqual(dt1, DataType.SET(DataType.NULLABLE(DataType.STRING)))
+
+    def test_data_type_pickle_scalar_singletons(self):
+        for definition in (
+                DataType.ARRAY, DataType.BYTES, DataType.BOOLEAN, DataType.DATETIME, DataType.FLOAT,
+                DataType.FUNCTION, DataType.MAPPING, DataType.NULL, DataType.NULLABLE, DataType.OBJECT,
+                DataType.SET, DataType.STRING, DataType.TIMEDELTA, DataType.UNDEFINED
+        ):
+            self.assertIs(pickle.loads(pickle.dumps(definition)), definition)
+
+    def test_data_type_pickle_parameterized(self):
+        definitions = (
+                DataType.ARRAY(DataType.FLOAT),
+                DataType.SET(DataType.STRING),
+                DataType.SET(DataType.NULLABLE(DataType.STRING)),
+                DataType.MAPPING(DataType.STRING, DataType.FLOAT),
+                DataType.NULLABLE(DataType.STRING),
+                DataType.FUNCTION('test', return_type=DataType.FLOAT, argument_types=(DataType.FLOAT, DataType.STRING)),
+                DataType.ARRAY(DataType.MAPPING(DataType.STRING, DataType.NULLABLE(DataType.FLOAT))),
+        )
+        for definition in definitions:
+            restored = pickle.loads(pickle.dumps(definition))
+            self.assertEqual(restored, definition)
+            self.assertIs(restored.__class__, definition.__class__)
+            self.assertTrue(DataType.is_compatible(restored, definition))
+            self.assertTrue(DataType.is_compatible(definition, restored))
 
     def test_data_type_value_type_nullable_kwarg_emits_deprecation(self):
         for constructor in (DataType.ARRAY, DataType.SET):
@@ -521,6 +547,15 @@ class ObjectDataTypeTests(unittest.TestCase):
                 'address': Address,
         })
         self.assertIs(Person.attributes['address'], Address)
+
+    def test_object_pickle(self):
+        hero = self._build_hero()
+        restored = pickle.loads(pickle.dumps(hero))
+        self.assertEqual(restored, hero)
+        self.assertEqual(restored.attributes, hero.attributes)
+        self.assertIs(restored.accessor, getattr)
+        # the bare OBJECT constant keeps identity through pickling
+        self.assertIs(pickle.loads(pickle.dumps(DataType.OBJECT)), DataType.OBJECT)
 
     def test_object_self_reference_direct(self):
         Hero = self._build_hero()

@@ -629,6 +629,280 @@ class EngineRuleTests(unittest.TestCase):
         self.test_engine_rule_filter(rule=debug_rule)
 
 
+class RuleParameterTests(unittest.TestCase):
+    rule_text = 'age >= @min_age and group in @allowed_groups'
+    rule_params = {'min_age': types.DataType.FLOAT, 'allowed_groups': types.DataType.SET(types.DataType.STRING)}
+    def test_rule_parameters_declaration(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        self.assertEqual(set(rule.params.keys()), {'min_age', 'allowed_groups'})
+        self.assertEqual(rule.params['min_age'], types.DataType.FLOAT)
+        self.assertEqual(rule.params['allowed_groups'], types.DataType.SET(types.DataType.STRING))
+        self.assertIn('min_age', rule.context.symbols)
+
+    def test_rule_parameters_python_type_declarations(self):
+        rule = engine.Rule('n in @choices and age >= @floor', params={'choices': set[str], 'floor': float})
+        self.assertEqual(rule.params['choices'], types.DataType.SET(types.DataType.STRING))
+        self.assertTrue(rule.bind({'choices': {'a'}, 'floor': 1}).matches({'n': 'a', 'age': 2}))
+
+    def test_rule_parameters_parse_once(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        binding_a = rule.bind({'min_age': 18, 'allowed_groups': {'staff'}})
+        binding_b = rule.bind(min_age=65, allowed_groups={'senior'})
+        self.assertIs(binding_a.rule.statement, rule.statement)
+        self.assertIs(binding_b.rule.statement, rule.statement)
+        self.assertIsInstance(binding_a, engine.RuleBinding)
+        self.assertIn('RuleBinding', repr(binding_a))
+
+    def test_rule_parameters_binding_values(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        binding = rule.bind({'min_age': 18, 'allowed_groups': {'staff', 'vip'}})
+        self.assertEqual(dict(binding.values), {'min_age': 18, 'allowed_groups': {'staff', 'vip'}})
+        self.assertEqual(binding.params, rule.params)
+        self.assertEqual(binding.text, rule.text)
+        self.assertIs(binding.context, rule.context)
+
+    def test_rule_parameters_binding_matches(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        adult = rule.bind({'min_age': 18, 'allowed_groups': {'staff'}})
+        senior = rule.bind(min_age=65, allowed_groups={'senior'})
+        self.assertTrue(adult.matches({'age': 20, 'group': 'staff'}))
+        self.assertFalse(adult.matches({'age': 17, 'group': 'staff'}))
+        self.assertFalse(adult.matches({'age': 20, 'group': 'guest'}))
+        self.assertTrue(senior.matches({'age': 70, 'group': 'senior'}))
+        self.assertFalse(senior.matches({'age': 70, 'group': 'staff'}))
+        self.assertFalse(senior.matches({'age': 20, 'group': 'senior'}))
+
+    def test_rule_parameters_binding_evaluate_non_boolean(self):
+        rule = engine.Rule('age - @offset', params={'offset': types.DataType.FLOAT})
+        binding = rule.bind(offset=10)
+        self.assertEqual(binding.evaluate({'age': decimal.Decimal('25')}), decimal.Decimal('15'))
+
+    def test_rule_parameters_binding_filter(self):
+        rule = engine.Rule('age >= @min_age', params={'min_age': types.DataType.FLOAT})
+        things = [{'age': 10}, {'age': 20}, {'age': 30}]
+        self.assertEqual(list(rule.bind(min_age=18).filter(things)), [{'age': 20}, {'age': 30}])
+        self.assertEqual(list(rule.bind(min_age=25).filter(things)), [{'age': 30}])
+
+    def test_rule_parameters_distinct_from_thing_field(self):
+        # a parameter and a thing field may share a name without ever being confused
+        rule = engine.Rule('x > @x', params={'x': types.DataType.FLOAT})
+        binding = rule.bind(x=5)
+        self.assertTrue(binding.matches({'x': 9}))
+        self.assertFalse(binding.matches({'x': 3}))
+
+    def test_rule_parameters_distinct_from_comprehension_variable(self):
+        rule = engine.Rule('$all([v > @floor for v in values])', params={'floor': types.DataType.FLOAT})
+        binding = rule.bind(floor=10)
+        self.assertTrue(binding.matches({'values': [11, 12, 13]}))
+        self.assertFalse(binding.matches({'values': [9, 12, 13]}))
+
+    def test_rule_parameters_distinct_from_builtin_symbol(self):
+        # @limit and the builtin $pi coexist as separate namespaces in the same rule
+        rule = engine.Rule('$pi > @limit', params={'limit': types.DataType.FLOAT})
+        binding = rule.bind(limit=1)
+        self.assertTrue(binding.matches({}))
+        with self.assertRaises(ValueError):
+            engine.Rule('$pi', params={'pi': types.DataType.FLOAT})
+
+    def test_rule_parameters_object_and_array_types(self):
+        person_type = types.DataType.OBJECT('Person', {'name': types.DataType.STRING, 'age': types.DataType.FLOAT})
+        object_rule = engine.Rule(
+                'subject.name == @candidate.name and subject.age >= @candidate.age',
+                params={'candidate': person_type}
+        )
+
+        class _Person(object):
+            def __init__(self, name, age):
+                self.name = name
+                self.age = age
+        binding = object_rule.bind(candidate=_Person('ada', 36))
+        self.assertTrue(binding.matches({'subject': {'name': 'ada', 'age': 40}}))
+        self.assertFalse(binding.matches({'subject': {'name': 'ada', 'age': 20}}))
+
+        array_rule = engine.Rule('score >= @thresholds[1]', params={'thresholds': types.DataType.ARRAY(types.DataType.FLOAT)})
+        array_binding = array_rule.bind(thresholds=(0, 60, 100))
+        self.assertTrue(array_binding.matches({'score': 80}))
+        self.assertFalse(array_binding.matches({'score': 40}))
+
+    def test_rule_parameters_nullable(self):
+        rule = engine.Rule("(@expected ?? 'anon') == nick", params={'expected': types.DataType.NULLABLE(types.DataType.STRING)})
+        self.assertTrue(rule.bind(expected=None).matches({'nick': 'anon'}))
+        self.assertTrue(rule.bind(expected='bob').matches({'nick': 'bob'}))
+        self.assertFalse(rule.bind(expected='bob').matches({'nick': 'other'}))
+
+    def test_rule_parameters_type_checked_at_parse_time(self):
+        with self.assertRaises(errors.EvaluationError):
+            engine.Rule('@limit > "a string"', params={'limit': types.DataType.FLOAT})
+
+    def test_rule_parameters_undeclared_reference_raises(self):
+        with self.assertRaises(errors.SymbolResolutionError) as context:
+            engine.Rule('value > @missing')
+        self.assertEqual(context.exception.symbol_name, 'missing')
+        self.assertEqual(context.exception.symbol_scope, 'parameter')
+
+    def test_rule_parameters_undeclared_reference_suggestion(self):
+        with self.assertRaises(errors.SymbolResolutionError) as context:
+            engine.Rule('value > @min_ge', params={'min_age': types.DataType.FLOAT})
+        self.assertEqual(context.exception.suggestion, 'min_age')
+
+    def test_rule_parameters_is_valid(self):
+        self.assertTrue(engine.Rule.is_valid('age >= @min_age', params={'min_age': types.DataType.FLOAT}))
+        self.assertFalse(engine.Rule.is_valid('age >= @min_age'))
+        self.assertFalse(engine.Rule.is_valid('@limit > "x"', params={'limit': types.DataType.FLOAT}))
+        self.assertTrue(engine.Rule.is_valid('age >= 1'))
+
+    def test_rule_parameters_unused_declarations_allowed(self):
+        rule = engine.Rule('age >= 1', params={'unused': types.DataType.FLOAT})
+        self.assertIn('unused', rule.params)
+        self.assertTrue(rule.bind(unused=1).matches({'age': 2}))
+
+    def test_rule_parameters_empty_rule_binding(self):
+        rule = engine.Rule('age >= 1')
+        binding = rule.bind()
+        self.assertEqual(dict(binding.values), {})
+        self.assertTrue(binding.matches({'age': 2}))
+
+    def test_rule_parameters_bind_missing_raises(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        with self.assertRaises(errors.ParameterBindingError) as context:
+            rule.bind(min_age=18)
+        self.assertEqual(context.exception.missing, ('allowed_groups',))
+        self.assertEqual(context.exception.unexpected, ())
+
+    def test_rule_parameters_bind_unexpected_raises(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        with self.assertRaises(errors.ParameterBindingError) as context:
+            rule.bind(min_age=18, allowed_groups={'a'}, extra=1)
+        self.assertEqual(context.exception.missing, ())
+        self.assertEqual(context.exception.unexpected, ('extra',))
+
+    def test_rule_parameters_bind_wrong_type_raises(self):
+        rule = engine.Rule('age >= @min_age', params={'min_age': types.DataType.FLOAT})
+        with self.assertRaises(errors.SymbolTypeError):
+            rule.bind(min_age='not a number')
+
+    def test_rule_parameters_bind_mapping_and_keywords_merge(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        binding = rule.bind({'min_age': 18}, allowed_groups={'staff'})
+        self.assertTrue(binding.matches({'age': 20, 'group': 'staff'}))
+        with self.assertRaises(TypeError):
+            rule.bind(('min_age', 18))  # type: ignore[arg-type]
+
+    def test_rule_parameters_bindings_are_independent(self):
+        rule = engine.Rule('age >= @min_age', params={'min_age': types.DataType.FLOAT})
+        low = rule.bind(min_age=1)
+        high = rule.bind(min_age=100)
+        # interleave the two bindings repeatedly; neither may observe the other's value
+        for _ in range(5):
+            self.assertTrue(low.matches({'age': 50}))
+            self.assertFalse(high.matches({'age': 50}))
+
+    def test_rule_parameters_binding_copies_values(self):
+        rule = engine.Rule('age >= @min_age', params={'min_age': types.DataType.FLOAT})
+        values = {'min_age': 18}
+        binding = rule.bind(values)
+        values['min_age'] = 99
+        self.assertEqual(binding.values['min_age'], 18)
+        with self.assertRaises(TypeError):
+            binding.values['min_age'] = 1  # the exposed view is read-only
+
+    def test_rule_parameters_no_state_leftovers_after_evaluation(self):
+        rule = engine.Rule('age >= @min_age', params={'min_age': types.DataType.FLOAT})
+        binding = rule.bind(min_age=18)
+        binding.matches({'age': 20})
+        self.assertEqual(len(rule.context._tls.parameter_value_scopes), 0)
+
+    def test_rule_parameters_evaluation_without_binding_raises(self):
+        rule = engine.Rule('age >= @min_age', params={'min_age': types.DataType.FLOAT})
+        with self.assertRaises(errors.SymbolResolutionError) as context:
+            rule.matches({'age': 20})
+        self.assertEqual(context.exception.symbol_name, 'min_age')
+        self.assertEqual(context.exception.symbol_scope, 'parameter')
+
+    def test_rule_parameters_invalid_declaration_names(self):
+        for name in ('1bad', 'has-dash', 'has space'):
+            with self.assertRaises(ValueError):
+                engine.Rule('x', params={name: types.DataType.FLOAT})
+        for name in ('true', 'false', 'null', 'and', 'in', 'for', 'if', 'elif', 'else', 'while'):
+            with self.assertRaises(ValueError):
+                engine.Rule('x', params={name: types.DataType.FLOAT})
+        for name in ('pi', 'now', 'split', 're_groups'):
+            with self.assertRaises(ValueError):
+                engine.Rule('x', params={name: types.DataType.FLOAT})
+
+    def test_rule_parameters_invalid_declaration_values(self):
+        with self.assertRaises(TypeError):
+            engine.Rule('x', params={1: types.DataType.FLOAT})  # type: ignore[dict-item]
+        with self.assertRaises(TypeError):
+            engine.Rule('@x', params={'x': 'FLOAT'})  # type: ignore[dict-item]
+        with self.assertRaises(TypeError):
+            engine.Rule('@x', params=['x'])  # type: ignore[arg-type]
+        with self.assertRaises(TypeError):
+            engine.Rule('@x', params={'x': 'not a type'})  # type: ignore[dict-item]
+        with self.assertRaises(TypeError):
+            engine.Rule('@x', params={'x': 42})  # type: ignore[dict-item]
+
+    @unittest.skipUnless(has_graphviz, 'graphviz is unavailable')
+    def test_rule_parameters_graphviz(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        digraph = rule.bind(min_age=18, allowed_groups={'a'}).rule.to_graphviz()
+        self.assertIsInstance(digraph, graphviz.Digraph)
+
+    def test_rule_parameters_debug_rule(self):
+        with open(os.devnull, 'w') as file_h:
+            original_stderr = sys.stderr
+            sys.stderr = file_h
+            rule = engine.DebugRule(self.rule_text, params=self.rule_params)
+            sys.stderr = original_stderr
+        self.assertTrue(rule.bind(min_age=18, allowed_groups={'staff'}).matches({'age': 20, 'group': 'staff'}))
+
+    def test_rule_parameters_pickle(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        rule2 = pickle.loads(pickle.dumps(rule))
+        self.assertEqual(rule2.params, rule.params)
+        binding = rule2.bind(min_age=18, allowed_groups={'staff'})
+        self.assertTrue(binding.matches({'age': 20, 'group': 'staff'}))
+        self.assertFalse(binding.matches({'age': 10, 'group': 'staff'}))
+
+    def test_rule_binding_pickle(self):
+        rule = engine.Rule(self.rule_text, params=self.rule_params)
+        binding = pickle.loads(pickle.dumps(rule.bind(min_age=18, allowed_groups={'staff'})))
+        self.assertEqual(dict(binding.values), {'min_age': 18, 'allowed_groups': {'staff'}})
+        self.assertTrue(binding.matches({'age': 20, 'group': 'staff'}))
+
+class ContextParameterScopeTests(unittest.TestCase):
+    def test_context_parameter_declarations_scope(self):
+        context = engine.Context()
+        with self.assertRaises(errors.SymbolResolutionError):
+            context.resolve_type('limit', scope='parameter')
+        with context.parameter_declarations({'limit': types.DataType.FLOAT}):
+            self.assertEqual(context.resolve_type('limit', scope='parameter'), types.DataType.FLOAT)
+        with self.assertRaises(errors.SymbolResolutionError):
+            context.resolve_type('limit', scope='parameter')
+
+    def test_context_parameter_values_scope(self):
+        context = engine.Context()
+        with self.assertRaises(errors.SymbolResolutionError):
+            context.resolve({}, 'limit', scope='parameter')
+        with context.parameter_values({'limit': 42}):
+            self.assertEqual(context.resolve({}, 'limit', scope='parameter'), 42)
+        with self.assertRaises(errors.SymbolResolutionError):
+            context.resolve({}, 'limit', scope='parameter')
+
+    def test_context_parameter_value_scope_suggestion(self):
+        context = engine.Context()
+        with context.parameter_values({'min_age': 1}):
+            with self.assertRaises(errors.SymbolResolutionError) as caught:
+                context.resolve({}, 'min_ge', scope='parameter')
+        self.assertEqual(caught.exception.suggestion, 'min_age')
+
+    def test_context_parameter_scopes_do_not_affect_thing_symbols(self):
+        context = engine.Context()
+        with context.parameter_declarations({'name': types.DataType.FLOAT}):
+            # thing fields remain UNDEFINED unless the type resolver knows them
+            self.assertEqual(context.resolve_type('name'), types.DataType.UNDEFINED)
+            self.assertEqual(context.resolve_type('name', scope='parameter'), types.DataType.FLOAT)
+
 class EngineDatetimeRuleTests(unittest.TestCase):
     def test_add_timedeltas(self):
         rule = engine.Rule("t'P4DT2H31S' + t'P1WT45M17S' == t'P1W4DT2H45M48S'")
